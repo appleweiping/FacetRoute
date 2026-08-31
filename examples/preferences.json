@@ -1,0 +1,37 @@
+{
+  "profiles": [
+    {
+      "user_id": "default",
+      "quality_weight": 0.6,
+      "cost_weight": 0.25,
+      "latency_weight": 0.15
+    },
+    {
+      "user_id": "budget",
+      "quality_weight": 0.3,
+      "cost_weight": 0.55,
+      "latency_weight": 0.15,
+      "max_cost_usd": 0.002,
+      "preferred_models": ["local-sparrow"]
+    },
+    {
+      "user_id": "analyst",
+      "quality_weight": 0.82,
+      "cost_weight": 0.08,
+      "latency_weight": 0.1,
+      "minimum_quality": 0.7,
+      "preferred_models": ["marble-reasoner"],
+      "task_weight_overrides": {
+        "translation": {"quality": 0.7, "cost": 0.2, "latency": 0.1}
+      }
+    },
+    {
+      "user_id": "private",
+      "quality_weight": 0.5,
+      "cost_weight": 0.15,
+      "latency_weight": 0.35,
+      "required_region": "local",
+      "blocked_models": ["marble-reasoner"]
+    }
+  ]
+}

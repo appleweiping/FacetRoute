@@ -1,0 +1,61 @@
+{
+  "models": [
+    {
+      "model_id": "local-sparrow",
+      "display_name": "Local Sparrow",
+      "capabilities": ["text", "code", "json"],
+      "input_cost_per_million": 0.0,
+      "output_cost_per_million": 0.0,
+      "latency_ms_p50": 95,
+      "latency_ms_p95": 180,
+      "context_window": 8192,
+      "quality_by_task": {"default": 0.58, "code": 0.66, "summarization": 0.65},
+      "regions": ["local"],
+      "supports_json": true,
+      "metadata": {"local": true, "family": "small"}
+    },
+    {
+      "model_id": "cobalt-chat",
+      "display_name": "Cobalt Chat",
+      "capabilities": ["text", "code", "math", "reasoning", "json"],
+      "input_cost_per_million": 0.45,
+      "output_cost_per_million": 1.35,
+      "latency_ms_p50": 260,
+      "latency_ms_p95": 620,
+      "context_window": 32768,
+      "quality_by_task": {"default": 0.76, "code": 0.79, "math": 0.74, "reasoning": 0.77},
+      "regions": ["us", "eu"],
+      "supports_json": true,
+      "metadata": {"local": false, "family": "balanced"}
+    },
+    {
+      "model_id": "marble-reasoner",
+      "display_name": "Marble Reasoner",
+      "capabilities": ["text", "code", "math", "reasoning", "tools", "json"],
+      "input_cost_per_million": 2.4,
+      "output_cost_per_million": 7.2,
+      "latency_ms_p50": 740,
+      "latency_ms_p95": 1550,
+      "context_window": 131072,
+      "quality_by_task": {"default": 0.88, "code": 0.92, "math": 0.95, "reasoning": 0.94},
+      "regions": ["us", "eu", "apac"],
+      "supports_tools": true,
+      "supports_json": true,
+      "metadata": {"local": false, "family": "reasoning"}
+    },
+    {
+      "model_id": "lotus-polyglot",
+      "display_name": "Lotus Polyglot",
+      "capabilities": ["text", "translation", "json"],
+      "input_cost_per_million": 0.3,
+      "output_cost_per_million": 0.9,
+      "latency_ms_p50": 190,
+      "latency_ms_p95": 440,
+      "context_window": 16384,
+      "quality_by_task": {"default": 0.69, "translation": 0.91, "summarization": 0.73},
+      "regions": ["us", "eu", "apac"],
+      "supports_json": true,
+      "metadata": {"local": false, "family": "multilingual"}
+    }
+  ]
+}

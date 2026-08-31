@@ -1,0 +1,24 @@
+{
+  "rules": [
+    {
+      "name": "deep-reasoning-preference",
+      "prefer_models": ["marble-reasoner"],
+      "tasks": ["math", "reasoning"],
+      "minimum_difficulty": 0.55,
+      "bonus": 0.1
+    },
+    {
+      "name": "translation-specialist",
+      "prefer_models": ["lotus-polyglot"],
+      "tasks": ["translation"],
+      "bonus": 0.12
+    },
+    {
+      "name": "short-code-locality",
+      "prefer_models": ["local-sparrow"],
+      "tasks": ["code"],
+      "maximum_difficulty": 0.4,
+      "bonus": 0.06
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{"request_id":"demo-001","user_id":"default","query":"Summarize the design trade-offs in three bullets.","task_hint":"summarization","expected_output_tokens":180}
+{"request_id":"demo-002","user_id":"budget","query":"Write a Python function that merges two sorted lists.","task_hint":"code","needs_json":false,"expected_output_tokens":220}
+{"request_id":"demo-003","user_id":"analyst","query":"Derive the posterior for a beta-binomial model step by step.","task_hint":"math","expected_output_tokens":900}
+{"request_id":"demo-004","user_id":"default","query":"Translate this release note into Chinese: The service will restart tonight.","task_hint":"translation","expected_output_tokens":120}
+{"request_id":"demo-005","user_id":"private","query":"Summarize this confidential local incident report.","sensitivity":"restricted","task_hint":"summarization","expected_output_tokens":240}
+{"request_id":"demo-006","user_id":"analyst","query":"Plan a migration, compare two failure modes, and return a JSON checklist.","task_hint":"reasoning","needs_json":true,"expected_output_tokens":600}
