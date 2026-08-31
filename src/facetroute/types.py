@@ -91,6 +91,8 @@ class ModelCandidate:
             _non_negative(name, value)
         if self.latency_ms_p95 < self.latency_ms_p50:
             raise ConfigurationError("latency_ms_p95 cannot be below latency_ms_p50")
+        if isinstance(self.context_window, bool) or not isinstance(self.context_window, int):
+            raise ConfigurationError("context_window must be an integer")
         if self.context_window <= 0:
             raise ConfigurationError("context_window must be positive")
         for name, value in (
@@ -166,8 +168,7 @@ class ModelCandidate:
                 latency_ms_p95=float(data.get("latency_ms_p95", 0.0)),
                 context_window=int(data["context_window"]),
                 quality_by_task={
-                    str(key): float(value)
-                    for key, value in dict(data["quality_by_task"]).items()
+                    str(key): float(value) for key, value in dict(data["quality_by_task"]).items()
                 },
                 regions=_names(data.get("regions", []), "regions"),
                 supports_tools=_boolean_field(data, "supports_tools", False),
@@ -218,7 +219,9 @@ class UserPreferences:
         blocked = _identifiers(self.blocked_models, "blocked_models")
         overlap = preferred & blocked
         if overlap:
-            raise ConfigurationError(f"models cannot be both preferred and blocked: {sorted(overlap)}")
+            raise ConfigurationError(
+                f"models cannot be both preferred and blocked: {sorted(overlap)}"
+            )
         region = self.required_region.strip().lower() if self.required_region else None
         normalized_overrides: dict[str, dict[str, float]] = {}
         for task, weights in self.task_weight_overrides.items():
@@ -278,7 +281,9 @@ class UserPreferences:
                 required_region=(
                     str(data["required_region"]) if data.get("required_region") else None
                 ),
-                max_cost_usd=(float(data["max_cost_usd"]) if data.get("max_cost_usd") is not None else None),
+                max_cost_usd=(
+                    float(data["max_cost_usd"]) if data.get("max_cost_usd") is not None else None
+                ),
                 max_latency_ms=(
                     float(data["max_latency_ms"])
                     if data.get("max_latency_ms") is not None
@@ -321,10 +326,17 @@ class RouteRequest:
             raise ConfigurationError("user_id cannot be empty")
         if not self.request_id.strip():
             raise ConfigurationError("request_id cannot be empty")
+        if isinstance(self.expected_output_tokens, bool) or not isinstance(
+            self.expected_output_tokens, int
+        ):
+            raise ConfigurationError("expected_output_tokens must be an integer")
         if self.expected_output_tokens < 0:
             raise ConfigurationError("expected_output_tokens cannot be negative")
-        if self.context_tokens is not None and self.context_tokens < 0:
-            raise ConfigurationError("context_tokens cannot be negative")
+        if self.context_tokens is not None:
+            if isinstance(self.context_tokens, bool) or not isinstance(self.context_tokens, int):
+                raise ConfigurationError("context_tokens must be an integer")
+            if self.context_tokens < 0:
+                raise ConfigurationError("context_tokens cannot be negative")
         if self.max_cost_usd is not None:
             _non_negative("max_cost_usd", self.max_cost_usd)
         if self.max_latency_ms is not None:
@@ -341,7 +353,9 @@ class RouteRequest:
         )
         object.__setattr__(self, "region", self.region.strip().lower() if self.region else None)
         object.__setattr__(self, "sensitivity", sensitivity)
-        object.__setattr__(self, "task_hint", self.task_hint.strip().lower() if self.task_hint else None)
+        object.__setattr__(
+            self, "task_hint", self.task_hint.strip().lower() if self.task_hint else None
+        )
         object.__setattr__(self, "metadata", dict(self.metadata))
 
 
@@ -427,8 +441,7 @@ class RouteDecision:
             "score": self.score,
             "breakdown": self.breakdown.to_dict(),
             "alternatives": [
-                {"model_id": model_id, "score": score}
-                for model_id, score in self.alternatives
+                {"model_id": model_id, "score": score} for model_id, score in self.alternatives
             ],
             "excluded": {key: list(value) for key, value in self.excluded.items()},
             "matched_rules": list(self.matched_rules),

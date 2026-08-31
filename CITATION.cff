@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use FacetRoute in research, please cite this software."
+title: "FacetRoute: Explainable Multi-Objective LLM Routing"
+type: software
+authors:
+  - family-names: "Yan"
+    given-names: "Weiping"
+    alias: "appleweiping"
+version: 0.2.0
+date-released: 2026-08-31
+license: MIT
+repository-code: "https://github.com/appleweiping/FacetRoute"
+url: "https://github.com/appleweiping/FacetRoute"
+abstract: >-
+  An offline-first Python toolkit for constraint-aware, explainable routing
+  across declared language-model candidates with deterministic and adaptive policies.

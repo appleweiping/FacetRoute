@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "facetroute"
-version = "0.1.0"
+version = "0.2.0"
 description = "Offline-first, explainable personalized routing across declared LLM candidates"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
-authors = [{ name = "FacetRoute contributors" }]
+authors = [{ name = "Weiping Yan" }]
 keywords = ["llm", "routing", "personalization", "bandit", "pareto"]
 classifiers = [
   "Development Status :: 3 - Alpha",

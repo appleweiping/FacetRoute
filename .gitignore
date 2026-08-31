@@ -13,3 +13,5 @@ _state/
 feedback.jsonl
 bandit-state.json
 simulation-report.json
+artifacts/
+.tmp-v1/

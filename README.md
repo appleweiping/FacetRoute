@@ -24,7 +24,8 @@ conditionals, and learned scores. FacetRoute separates those concerns:
 - a user profile declares quality, cost, and latency preferences;
 - deterministic policies produce auditable decisions;
 - a contextual bandit learns only after explicit feedback is recorded;
-- simulation measures behavior before a policy is used in an application.
+- counterfactual benchmarks and calibration measure behavior before a policy
+  is used in an application.
 
 FacetRoute selects a model identifier. Your application remains responsible
 for authentication, prompts, provider calls, retries, and output validation.
@@ -52,6 +53,11 @@ flowchart LR
     E --> FB
     FB --> U
     FB --> REP[Report]
+    T[Strict counterfactual trace] --> CAL[Threshold calibration]
+    T --> BENCH[Policy benchmark + bootstrap CI]
+    CAL --> REP
+    BENCH --> REP
+    D --> HTTP[Bounded local HTTP decision service]
 ```
 
 The important invariant is that every policy receives only models that passed
@@ -81,10 +87,20 @@ change preferences; neither can make an ineligible model selectable.
   - `LinUCBRouter` learns per-model reward estimates and uncertainty online.
 - **Local state**: atomic versioned JSON for Bandit/profile state and
   append-only JSONL feedback suitable for inspection and replay.
-- **Batch routing and offline evaluation**: deterministic ordering, optional
-  error collection, seeded reward simulation, regret, cost, latency, success,
-  and selection-distribution metrics.
-- **CLI**: `route`, `simulate`, `feedback`, and `report`.
+- **Strict counterfactual traces**: duplicate-key and non-finite-number
+  rejection, stable request IDs, bounded line/record sizes, complete observed
+  outcome validation, and SHA-256 provenance.
+- **Calibration and policy benchmarks**: strong/weak score thresholds,
+  cost-quality Pareto curves, fixed-model baselines, rule/Pareto/LinUCB
+  comparisons, quality regret, constraint violations, and seeded bootstrap
+  confidence intervals.
+- **Portable reports**: deterministic JSON, analysis-ready CSV, and a
+  standalone HTML table with an embedded reproducibility manifest.
+- **Decision service**: standard-library `/health`, `/v1/models`, and
+  `/v1/route` endpoints with bounded request bodies and concurrency, socket
+  timeouts, optional bearer authentication, and structured error semantics.
+- **CLI**: `route`, `simulate`, `feedback`, `report`, `calibrate`, `benchmark`,
+  and `serve`.
 
 ## Install
 
@@ -142,6 +158,30 @@ facetroute report --log feedback.jsonl
 
 Everything above is local. Names in `examples/models.json` are fictional and
 the simulator does not contact them.
+
+Calibrate a pairwise router and compare all policies against the included
+counterfactual fixture:
+
+```bash
+facetroute calibrate \
+  --traces examples/traces.jsonl \
+  --max-average-cost 0.0025 \
+  --output artifacts/calibration.json \
+  --csv artifacts/cost-quality.csv
+
+facetroute benchmark \
+  --models examples/models.json \
+  --preferences examples/preferences.json \
+  --rules examples/rules.json \
+  --traces examples/traces.jsonl \
+  --bootstrap-samples 1000 \
+  --seed 17 \
+  --output-dir artifacts/benchmark
+```
+
+The benchmark writes `benchmark.json`, `benchmark.csv`, and a standalone
+`benchmark.html`. The included trace is a fictional format demonstration, not
+a published performance claim.
 
 ## Python API
 
@@ -344,6 +384,82 @@ facetroute feedback \
 LinUCB feedback always requires the decision's JSON `context_vector` through
 `--context`. Pass an existing `--state` as well to update it immediately.
 
+## Calibration traces
+
+Each strict JSONL trace contains one provider-independent request and observed
+counterfactual outcomes keyed by model ID. Pairwise calibration additionally
+declares `strong_model`, `weak_model`, a `route_score` in `[0, 1)`, and an
+optional human or task-metric `preferred_model` label. Threshold `t` chooses
+the strong model when `route_score >= t`; threshold `1` always chooses weak.
+
+```json
+{
+  "request_id": "eval-001",
+  "request": {"query": "Local evaluation input", "request_id": "eval-001"},
+  "outcomes": {
+    "small": {"quality": 0.71, "cost_usd": 0.001, "latency_ms": 90, "success": true},
+    "strong": {"quality": 0.89, "cost_usd": 0.012, "latency_ms": 510, "success": true}
+  },
+  "preferred_model": "strong",
+  "route_score": 0.82,
+  "strong_model": "strong",
+  "weak_model": "small"
+}
+```
+
+Input rejects duplicate JSON keys, `NaN`/infinity, unknown trace/outcome
+fields, duplicate or unstable request IDs, inconsistent pairs, missing
+outcomes, and oversized records. See [the trace schema](docs/trace-schema.md).
+
+## Offline benchmark methodology
+
+`benchmark` replays the same ordered traces through rule, Pareto, fresh online
+LinUCB, and fixed-candidate policies by default. For each selection it looks up
+the already observed outcome; it never makes a model call. Reports contain:
+
+- quality, observed cost, latency, p95 latency, and success;
+- quality regret against the best observed eligible candidate;
+- routing failure and hard-constraint violation rates;
+- selection counts and index-keyed, non-traceback errors;
+- seeded percentile-bootstrap intervals;
+- exact trace/configuration and canonical catalog SHA-256 digests.
+
+Fixed baselines deliberately remain selectable when ineligible so their
+violation rate is visible. Confidence intervals describe sampling uncertainty
+inside the supplied trace, not biased labels or distribution shift. See
+[the benchmark methodology](docs/benchmark-methodology.md).
+
+## Local routing service
+
+Start a decision-only endpoint:
+
+```bash
+facetroute serve \
+  --models examples/models.json \
+  --preferences examples/preferences.json \
+  --rules examples/rules.json \
+  --policy pareto \
+  --host 127.0.0.1 \
+  --port 8080
+
+curl -s http://127.0.0.1:8080/v1/route \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"Explain this proof","user_id":"analyst"}'
+```
+
+Authentication is optional on loopback. For a non-loopback bind, set a token
+without placing it in process arguments:
+
+```bash
+export FACETROUTE_BEARER_TOKEN='replace-with-a-secret'
+facetroute serve --models examples/models.json --host 0.0.0.0
+```
+
+The service accepts the native request or a text-only subset of an OpenAI
+chat-shaped request. It returns a **routing decision**, never `choices`; it
+does not forward the prompt, execute the model, or claim to be an OpenAI API
+proxy. See [the HTTP contract](docs/http-api.md).
+
 ## Simulation metrics
 
 The included simulator is designed for policy plumbing and regression tests,
@@ -365,6 +481,11 @@ metrics while preserving the same `FeedbackEvent` contract.
   counts after execution.
 - Declared quality is configuration, not a claim about a real model. Keep it
   versioned with the benchmark and population that produced it.
+- Counterfactual comparison requires an outcome for the selected model.
+  Missing outcomes are failures; FacetRoute does not impute observations.
+- Bootstrap intervals assume the supplied rows form a useful empirical
+  population. They cannot repair judge bias, temporal leakage, or repeated
+  tuning against the same holdout.
 - Linear contextual Bandits cannot represent every interaction. Their value
   here is inspectability, fast online updates, and a small dependency surface.
 - JSONL appends are protected inside one process, not coordinated across a
@@ -376,8 +497,9 @@ metrics while preserving the same `FeedbackEvent` contract.
 
 ## Privacy and safety defaults
 
-- no network code in the package;
-- no environment-variable or API-key lookup;
+- no outbound provider calls, downloads, telemetry, or prompt forwarding;
+- the optional inbound service binds to loopback by default, reads only its
+  named bearer-token environment variable, and logs no headers or bodies;
 - no model/provider names embedded in core routing logic;
 - no automatic logging—callers must explicitly create a `FeedbackLog`;
 - no raw query text in `FeedbackEvent` by default;
@@ -400,8 +522,10 @@ python -m build
 
 The test suite covers validation, deterministic feature extraction, every
 constraint, score normalization, rules, Pareto dominance, batch errors,
-LinUCB learning and persistence, feedback integrity, simulation, configuration,
-and all four CLI commands. Tests are offline and use temporary directories.
+LinUCB learning and persistence, feedback integrity, strict traces,
+calibration, bootstrap benchmarking, reports, HTTP security/error boundaries,
+simulation, configuration, and all seven CLI commands. Tests are offline and
+use temporary directories.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for change and disclosure expectations.
 

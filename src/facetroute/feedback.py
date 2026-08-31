@@ -12,6 +12,7 @@ from threading import RLock
 from typing import Any
 from uuid import uuid4
 
+from ._json import loads_strict
 from .errors import ConfigurationError, PersistenceError
 
 
@@ -154,7 +155,7 @@ class FeedbackLog:
                     if not line.strip():
                         continue
                     try:
-                        payload = json.loads(line)
+                        payload = loads_strict(line)
                         event = FeedbackEvent.from_dict(payload)
                         if event.event_id in seen_event_ids:
                             raise PersistenceError(
@@ -163,7 +164,7 @@ class FeedbackLog:
                             )
                         seen_event_ids.add(event.event_id)
                         yield event
-                    except (json.JSONDecodeError, ConfigurationError) as exc:
+                    except (ValueError, ConfigurationError) as exc:
                         raise PersistenceError(
                             f"Invalid feedback at {self.path}:{line_number}: {exc}"
                         ) from exc

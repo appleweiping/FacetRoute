@@ -37,4 +37,14 @@ jobs:
       - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
         run: mypy -p facetroute
       - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
+        run: |
+          facetroute calibrate --traces examples/traces.jsonl --max-average-cost 0.003 --output /tmp/calibration.json --csv /tmp/calibration.csv
+          facetroute benchmark --models examples/models.json --preferences examples/preferences.json --rules examples/rules.json --traces examples/traces.jsonl --bootstrap-samples 100 --output-dir /tmp/benchmark
+          test -s /tmp/benchmark/benchmark.html
+      - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
         run: python -m build
+      - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
+        run: |
+          python -m pip install --force-reinstall --no-deps dist/*.whl
+          python -c "import facetroute; print(facetroute.__version__)"
+          facetroute --help

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from ._json import loads_strict
 from .errors import ConfigurationError
 from .rules import RoutingRule
 from .types import ModelCandidate, RouteRequest, UserPreferences
@@ -27,12 +27,34 @@ def _string_list(data: Mapping[str, Any], name: str) -> frozenset[str]:
     return frozenset(value)
 
 
+def _string_field(data: Mapping[str, Any], name: str, default: str | None = None) -> str:
+    value = data.get(name, default)
+    if not isinstance(value, str):
+        raise ConfigurationError(f"{name} must be a string")
+    return value
+
+
+def _integer_value(value: Any, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ConfigurationError(f"{name} must be an integer")
+    return value
+
+
+def _number_field(data: Mapping[str, Any], name: str) -> float | None:
+    value = data.get(name)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ConfigurationError(f"{name} must be a number")
+    return float(value)
+
+
 def _read_json(path: str | Path) -> Any:
     source = Path(path)
     try:
         with source.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
-    except (OSError, json.JSONDecodeError) as exc:
+            return loads_strict(handle.read())
+    except (OSError, ValueError) as exc:
         raise ConfigurationError(f"Cannot read JSON configuration {source}: {exc}") from exc
 
 
@@ -80,27 +102,36 @@ def load_rules(path: str | Path | None) -> tuple[RoutingRule, ...]:
 
 def request_from_dict(data: Mapping[str, Any]) -> RouteRequest:
     try:
+        metadata = data.get("metadata", {})
+        if not isinstance(metadata, dict):
+            raise ConfigurationError("metadata must be a JSON object")
         return RouteRequest(
-            query=str(data["query"]),
-            user_id=str(data.get("user_id", "default")),
-            expected_output_tokens=int(data.get("expected_output_tokens", 256)),
-            required_capabilities=_string_list(data, "required_capabilities"),
-            max_cost_usd=(float(data["max_cost_usd"]) if data.get("max_cost_usd") is not None else None),
-            max_latency_ms=(
-                float(data["max_latency_ms"])
-                if data.get("max_latency_ms") is not None
-                else None
+            query=_string_field(data, "query"),
+            user_id=_string_field(data, "user_id", "default"),
+            expected_output_tokens=_integer_value(
+                data.get("expected_output_tokens", 256), "expected_output_tokens"
             ),
-            region=str(data["region"]) if data.get("region") else None,
+            required_capabilities=_string_list(data, "required_capabilities"),
+            max_cost_usd=_number_field(data, "max_cost_usd"),
+            max_latency_ms=_number_field(data, "max_latency_ms"),
+            region=_string_field(data, "region") if data.get("region") is not None else None,
             needs_tools=_boolean_field(data, "needs_tools", False),
             needs_json=_boolean_field(data, "needs_json", False),
-            sensitivity=str(data.get("sensitivity", "normal")),
-            task_hint=str(data["task_hint"]) if data.get("task_hint") else None,
-            context_tokens=(
-                int(data["context_tokens"]) if data.get("context_tokens") is not None else None
+            sensitivity=_string_field(data, "sensitivity", "normal"),
+            task_hint=(
+                _string_field(data, "task_hint") if data.get("task_hint") is not None else None
             ),
-            request_id=str(data["request_id"]) if data.get("request_id") else uuid4().hex,
-            metadata=dict(data.get("metadata", {})),
+            context_tokens=(
+                _integer_value(data["context_tokens"], "context_tokens")
+                if data.get("context_tokens") is not None
+                else None
+            ),
+            request_id=(
+                _string_field(data, "request_id")
+                if data.get("request_id") is not None
+                else uuid4().hex
+            ),
+            metadata=metadata,
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise ConfigurationError(f"Invalid route request: {exc}") from exc
@@ -115,11 +146,11 @@ def load_requests(path: str | Path) -> tuple[RouteRequest, ...]:
                 if not line.strip():
                     continue
                 try:
-                    payload = json.loads(line)
+                    payload = loads_strict(line)
                     if not isinstance(payload, dict):
                         raise ConfigurationError("request line must be a JSON object")
                     requests.append(request_from_dict(payload))
-                except (json.JSONDecodeError, ConfigurationError) as exc:
+                except (ValueError, ConfigurationError) as exc:
                     raise ConfigurationError(
                         f"Invalid request at {source}:{line_number}: {exc}"
                     ) from exc

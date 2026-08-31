@@ -27,6 +27,10 @@ python -m build
   dependency need an issue explaining why the standard library is insufficient.
 - Apply hard constraints before any learned or heuristic score.
 - Preserve deterministic tie-breaking and seeded simulations.
+- Keep benchmark manifests reproducible: stable request IDs, exact input
+  digests, and independent seeded RNG streams are compatibility surfaces.
+- Never impute a missing counterfactual outcome or present synthetic fixture
+  metrics as real provider performance.
 - Every new decision factor must appear in `RouteDecision` or its explanation.
 - Do not add provider network calls, API keys, telemetry, or silent persistence.
 - Persist versioned JSON that can be inspected and replayed without FacetRoute.
@@ -49,6 +53,6 @@ in commits. Review the complete diff and remain able to explain every line.
 
 ## Security and privacy
 
-Model catalogs and feedback can reveal infrastructure or user preferences.
+Model catalogs, traces, and feedback can reveal prompts, infrastructure, or user preferences.
 Use synthetic fixtures in tests and examples. Report vulnerabilities privately
 to the repository maintainers instead of publishing exploit details first.

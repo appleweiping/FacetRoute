@@ -2,7 +2,17 @@
 
 Notable changes are recorded here. Versions follow semantic versioning.
 
-## [Unreleased]
+## [0.2.0] - 2026-08-31
+
+- Added strict counterfactual traces and strong/weak threshold calibration with
+  cost-quality Pareto curves.
+- Added reproducible multi-policy benchmarks with fixed baselines, online
+  LinUCB replay, bootstrap intervals, constraint metrics, SHA-256 manifests,
+  and JSON/CSV/standalone HTML reports.
+- Added a bounded decision-only HTTP service with native and text-only
+  chat-shaped parsing, optional bearer authentication, and structured errors.
+- Hardened JSON against duplicate keys and non-finite constants and tightened
+  request numeric types.
 
 ## [0.1.0] - 2026-08-31
 
