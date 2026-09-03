@@ -305,6 +305,51 @@ that conflict rejects every candidate instead of weakening the profile.
 
 ## Routing policies
 
+FacetRoute ships exactly three policies, and they form one class hierarchy:
+`ParetoRouter` and `LinUCBRouter` subclass `RuleRouter` and override only how
+the eligible set is narrowed or re-scored. Every policy therefore runs the same
+`ConstraintEngine` and the same `MultiObjectiveScorer` before it chooses, and
+each decision records the policy that produced it. Select one with
+`--policy rule` (the default), `--policy pareto`, or `--policy linucb` on
+`route`, `simulate`, and `serve`; `benchmark` accepts the same three names plus
+`fixed` for single-model baselines.
+
+Only `linucb` holds state or changes with feedback. `rule` and `pareto` are
+functions of the catalog, the profile, the rules, and the request alone, so the
+same inputs always yield the same selection and the same score.
+
+The same request under all three:
+
+```bash
+show='import json, sys
+decision = json.load(sys.stdin)
+print(decision["policy"], decision["selected_model"], round(decision["score"], 4))'
+
+for policy in rule pareto linucb; do
+  facetroute route \
+    --models examples/models.json \
+    --preferences examples/preferences.json \
+    --rules examples/rules.json \
+    --policy "$policy" \
+    --user analyst \
+    --task math \
+    --query "Derive the beta-binomial posterior step by step" \
+  | python -c "$show"
+done
+```
+
+```text
+rule marble-reasoner 0.829
+pareto marble-reasoner 0.829
+linucb marble-reasoner 0.8534
+```
+
+The projection only keeps the example short; `route` still prints the complete
+decision JSON described above. All three pick `marble-reasoner` here. The
+LinUCB total is higher because an untrained arm predicts reward `0.0000` and
+adds its exploration bonus on top of the weighted deterministic prior, which is
+visible in that decision's own `explanation` field.
+
 ### Rule policy
 
 The rule policy performs four steps:
