@@ -24,6 +24,7 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = [
+  "bandit>=1.7",
   "build>=1.2",
   "mypy>=1.11",
   "pytest>=8.3",
@@ -71,3 +72,15 @@ python_version = "3.11"
 packages = ["facetroute"]
 strict = true
 warn_unreachable = true
+
+[tool.bandit]
+targets = ["src"]
+# B101: the only `assert` in this package (benchmark.py `_run_policy`) narrows
+# `PolicySpec.fixed_model` for mypy. The invariant it restates is already enforced
+# at runtime by `PolicySpec.__post_init__`, which raises ConfigurationError unless
+# exactly one of `router`/`fixed_model` is set, so no validation is performed only
+# by the assert and stripping it under `python -O` removes no check.
+# B311: FacetRoute seeds `random.Random(seed)` deliberately so bootstrap resampling
+# and the offline simulator stay reproducible. The package is offline-only with no
+# cryptographic surface; `secrets` would break the determinism it is built around.
+skips = ["B101", "B311"]
