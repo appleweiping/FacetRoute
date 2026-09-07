@@ -6,6 +6,14 @@ Notable changes are recorded here. Versions follow semantic versioning.
 
 _No changes yet._
 
+## [0.3.2] - 2026-09-07
+
+### Fixed
+
+- Synchronized the citation metadata with the released package version and
+  added a regression gate that keeps `pyproject.toml`, the source fallback,
+  `CITATION.cff`, and release tags consistent.
+
 ## [0.3.1] - 2026-09-07
 
 ### Security

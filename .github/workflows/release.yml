@@ -41,11 +41,13 @@ jobs:
           uv run --locked mypy -p facetroute
           uv run --locked bandit -q -c pyproject.toml -r src
           uv audit --locked
-      - name: Verify tag matches package version
+      - name: Verify release version metadata
         shell: bash
         run: |
           version="$(uv run --locked python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")"
           test "v${version}" = "${GITHUB_REF_NAME}"
+          citation_version="$(sed -n 's/^version: //p' CITATION.cff)"
+          test "${citation_version}" = "${version}"
       - name: Run release tests
         run: uv run --locked pytest --cov=facetroute --cov-branch
       - name: Build distributions
