@@ -306,16 +306,17 @@ that conflict rejects every candidate instead of weakening the profile.
 
 ## Routing policies
 
-FacetRoute ships exactly three policies, and they form one class hierarchy:
-`ParetoRouter` and `LinUCBRouter` subclass `RuleRouter` and override only how
-the eligible set is narrowed or re-scored. Every policy therefore runs the same
+FacetRoute ships four policies, and they form one class hierarchy:
+`ParetoRouter` and `LinUCBRouter` subclass `RuleRouter`, and `ThompsonRouter`
+subclasses `LinUCBRouter`, each overriding only how the eligible set is narrowed
+or re-scored. Every policy therefore runs the same
 `ConstraintEngine` and the same `MultiObjectiveScorer` before it chooses, and
 each decision records the policy that produced it. Select one with
-`--policy rule` (the default), `--policy pareto`, or `--policy linucb` on
-`route`, `simulate`, and `serve`; `benchmark` accepts the same three names plus
-`fixed` for single-model baselines.
+`--policy rule` (the default), `--policy pareto`, `--policy linucb`, or
+`--policy thompson` on `route`, `simulate`, and `serve`; `benchmark` accepts the
+same four names plus `fixed` for single-model baselines.
 
-Only `linucb` holds state or changes with feedback. `rule` and `pareto` are
+Only `linucb` and `thompson` hold state or change with feedback. `rule` and `pareto` are
 functions of the catalog, the profile, the rules, and the request alone, so the
 same inputs always yield the same selection and the same score.
 
@@ -399,6 +400,49 @@ explicit finite values in `[0, 1]`.
 State JSON stores inverse covariance matrices, reward vectors, update counts,
 dimension, `alpha`, ridge strength, and a schema version. Save operations write
 and fsync a temporary file in the same directory before `os.replace`.
+
+### Optimism or sampling
+
+`linucb` and `thompson` share one posterior. Each arm keeps the same covariance
+and reward vector, and `alpha` means the same thing to both -- the multiplier on
+an arm's uncertainty. Only the way a score is drawn from that posterior differs:
+
+- `linucb` scores every arm at the top of its confidence interval, so the arm it
+  tries is always the most hopeful one.
+- `thompson` draws from each arm's posterior, so an arm is tried roughly in
+  proportion to the probability that it is best.
+
+They differ most where several arms are plausible: optimism keeps returning to
+whichever interval is widest, while sampling spreads across them. A saved state
+loads under either policy, so a deployment can switch without discarding what it
+has learned.
+
+Sampling is made a function of the request rather than of a generator, so a
+decision stays reproducible: the same request against the same state always
+draws the same value, while a different request -- or a different `seed` --
+explores elsewhere. A routing log therefore replays to the routes it recorded,
+which a generator advanced per call could not do.
+
+**Which is better is an empirical question about your traffic, not a property of
+the rule.** On one synthetic linear-reward world with four arms over 1,200
+rounds, averaged across five worlds, neither dominates and the ordering flips
+with the exploration scale:
+
+| `alpha` | `linucb` regret | `thompson` regret |
+|---:|---:|---:|
+| 0.05 | 33.4 | 47.3 |
+| 0.10 | **32.1** | **37.2** |
+| 0.20 | 41.2 | **38.7** |
+| 0.35 (default) | 40.7 | 49.6 |
+| 0.60 | 47.8 | 51.5 |
+
+Two things are worth reading off that table rather than from the literature. The
+shipped default of `0.35` is best for neither policy in this world, so `alpha` is
+worth tuning on your own traffic. And `thompson` is not a free improvement: it
+explores more, which costs regret where the arms are close together and pays
+where they are not. `benchmark --policy linucb --policy thompson` runs both
+against the same requests so the comparison is made on your data instead of on
+this one.
 
 ## Feedback and replay
 

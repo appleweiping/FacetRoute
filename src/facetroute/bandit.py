@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
+import struct
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -116,7 +118,10 @@ class LinUCBPolicy:
         raw_identifiers = tuple(model_ids)
         if not raw_identifiers:
             raise ConfigurationError("LinUCB requires at least one model arm")
-        if any(not isinstance(identifier, str) or not identifier.strip() for identifier in raw_identifiers):
+        if any(
+            not isinstance(identifier, str) or not identifier.strip()
+            for identifier in raw_identifiers
+        ):
             raise ConfigurationError("LinUCB model arm identifiers must be non-empty strings")
         normalized_identifiers = tuple(identifier.strip() for identifier in raw_identifiers)
         if len(normalized_identifiers) != len(set(normalized_identifiers)):
@@ -196,9 +201,11 @@ class LinUCBPolicy:
                 arm_data = dict(raw)
                 matrix = [[float(value) for value in row] for row in arm_data["inverse_covariance"]]
                 vector = [float(value) for value in arm_data["reward_vector"]]
-                if len(matrix) != policy.dimension or any(
-                    len(row) != policy.dimension for row in matrix
-                ) or len(vector) != policy.dimension:
+                if (
+                    len(matrix) != policy.dimension
+                    or any(len(row) != policy.dimension for row in matrix)
+                    or len(vector) != policy.dimension
+                ):
                     raise PersistenceError(f"Invalid matrix shape for arm {model_id}")
                 _validate_inverse_covariance(matrix, str(model_id))
                 if any(not math.isfinite(value) for value in vector):
@@ -238,6 +245,7 @@ class LinUCBRouter(RuleRouter):
     """Filter candidates, then combine LinUCB confidence with an explicit prior."""
 
     policy_name = "linucb"
+    policy_label = "LinUCB"
 
     def __init__(
         self,
@@ -252,7 +260,7 @@ class LinUCBRouter(RuleRouter):
         super().__init__(candidates, preferences, rules, extractor=extractor)
         if prior_weight < 0 or not math.isfinite(prior_weight):
             raise ConfigurationError("prior_weight must be finite and non-negative")
-        self.policy = policy or LinUCBPolicy(item.model_id for item in self.candidates)
+        self.policy = policy or self._default_policy()
         if self.policy.dimension != CONTEXT_DIMENSION:
             raise ConfigurationError(
                 f"LinUCB state dimension must be {CONTEXT_DIMENSION}, got {self.policy.dimension}"
@@ -261,6 +269,9 @@ class LinUCBRouter(RuleRouter):
         if missing:
             raise ConfigurationError(f"LinUCB state is missing model arms: {sorted(missing)}")
         self.prior_weight = prior_weight
+
+    def _default_policy(self) -> LinUCBPolicy:
+        return LinUCBPolicy(item.model_id for item in self.candidates)
 
     def route(self, request: RouteRequest) -> RouteDecision:
         preferences = self.preference_for(request.user_id)
@@ -290,9 +301,7 @@ class LinUCBRouter(RuleRouter):
             )
             total = upper + self.prior_weight * prior.breakdown.total
             diagnostics[prior.candidate.model_id] = (prediction, uncertainty)
-            rescored.append(
-                ScoredCandidate(prior.candidate, replace(prior.breakdown, total=total))
-            )
+            rescored.append(ScoredCandidate(prior.candidate, replace(prior.breakdown, total=total)))
         scored = tuple(
             sorted(rescored, key=lambda item: (-item.breakdown.total, item.candidate.model_id))
         )
@@ -308,7 +317,8 @@ class LinUCBRouter(RuleRouter):
             matched,
             context_vector=context,
             explanation_prefix=(
-                f"LinUCB predicted reward={prediction:.4f}, uncertainty={uncertainty:.4f}",
+                f"{self.policy_label} predicted reward={prediction:.4f}, "
+                f"uncertainty={uncertainty:.4f}",
                 f"deterministic prior weight={self.prior_weight:.3f}",
             ),
         )
@@ -322,3 +332,110 @@ class LinUCBRouter(RuleRouter):
 
     def save_state(self, path: str | Path) -> None:
         self.policy.save(path)
+
+
+def _standard_normal(seed: int, model_id: str, context: Sequence[float]) -> float:
+    """A reproducible standard normal draw for one arm under one context.
+
+    Thompson sampling needs randomness, and this project needs a decision to be
+    reproducible from its inputs. Both hold if the draw is a function of the
+    inputs rather than of a mutable generator: the same request against the same
+    state always samples the same value, while a different request -- or a
+    different seed -- explores elsewhere. Replaying a routing log therefore
+    reproduces the routes it recorded, which a generator advanced per call
+    could not do.
+    """
+
+    digest = hashlib.blake2b(digest_size=16)
+    digest.update(seed.to_bytes(8, "big", signed=False))
+    digest.update(model_id.encode("utf-8"))
+    for value in context:
+        # Negative zero and zero are the same context; they must not draw
+        # differently, so the sign is normalized away before hashing.
+        digest.update(struct.pack(">d", value + 0.0 if value else 0.0))
+    raw = digest.digest()
+    # Box-Muller from two uniforms. The first is shifted off zero because the
+    # logarithm of zero is undefined.
+    first = (int.from_bytes(raw[:8], "big") + 1) / (2**64 + 1)
+    second = int.from_bytes(raw[8:], "big") / 2**64
+    return math.sqrt(-2.0 * math.log(first)) * math.cos(2.0 * math.pi * second)
+
+
+class ThompsonPolicy(LinUCBPolicy):
+    """Posterior sampling over the same per-arm state LinUCB maintains.
+
+    LinUCB explores by optimism: it scores every arm at the top of its
+    confidence interval, so the arm it tries is always the most hopeful one.
+    Thompson sampling draws from each arm's posterior instead, so an arm is
+    tried in proportion to the probability that it is best. The two differ most
+    where several arms are plausible: optimism keeps returning to whichever has
+    the widest interval, while sampling spreads across them.
+
+    The posterior state is identical, so ``alpha`` means the same thing in both
+    -- the multiplier on an arm's uncertainty -- and a saved state can be read
+    by either policy. Only the way a score is drawn from it differs.
+
+    Each arm keeps its own covariance and reward vector, so their posteriors are
+    independent and the score of an arm may be sampled directly from its own
+    marginal. Drawing a full parameter vector would give the same distribution
+    at more cost.
+    """
+
+    def __init__(
+        self,
+        model_ids: Iterable[str],
+        *,
+        dimension: int = CONTEXT_DIMENSION,
+        alpha: float = 0.35,
+        ridge: float = 1.0,
+        seed: int = 0,
+    ) -> None:
+        super().__init__(model_ids, dimension=dimension, alpha=alpha, ridge=ridge)
+        if isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed < 2**64:
+            raise ConfigurationError("Thompson seed must be an integer below 2**64")
+        self.seed = seed
+
+    def score(
+        self,
+        model_id: str,
+        context: Sequence[float],
+        exploration_scale: float = 1.0,
+    ) -> tuple[float, float, float]:
+        """Return a sampled score with the posterior mean and width behind it."""
+
+        self._validate_context(context)
+        if model_id not in self.arms:
+            raise ConfigurationError(f"unknown Thompson arm: {model_id}")
+        if exploration_scale < 0 or not math.isfinite(exploration_scale):
+            raise ConfigurationError("exploration_scale must be finite and non-negative")
+        prediction, uncertainty = self.arms[model_id].estimate(context)
+        draw = _standard_normal(self.seed, model_id, context)
+        sampled = prediction + self.alpha * exploration_scale * uncertainty * draw
+        return sampled, prediction, uncertainty
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = super().to_dict()
+        payload["policy"] = "thompson"
+        payload["seed"] = self.seed
+        return payload
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> ThompsonPolicy:
+        policy = super().from_dict(data)
+        if not isinstance(policy, cls):  # pragma: no cover - super() builds cls
+            raise PersistenceError("Thompson state did not construct a Thompson policy")
+        seed_raw = data.get("seed", 0)
+        if isinstance(seed_raw, bool) or not isinstance(seed_raw, int) or not 0 <= seed_raw < 2**64:
+            raise PersistenceError("Thompson seed must be an integer below 2**64")
+        policy.seed = seed_raw
+        return policy
+
+
+class ThompsonRouter(LinUCBRouter):
+    """Route by posterior sampling rather than by optimism."""
+
+    policy_name = "thompson"
+    policy_label = "Thompson"
+
+    def _default_policy(self) -> LinUCBPolicy:
+        return ThompsonPolicy(item.model_id for item in self.candidates)

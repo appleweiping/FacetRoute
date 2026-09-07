@@ -13,7 +13,7 @@ from typing import Any
 
 from . import __version__
 from ._json import loads_strict
-from .bandit import LinUCBPolicy, LinUCBRouter
+from .bandit import LinUCBPolicy, LinUCBRouter, ThompsonPolicy, ThompsonRouter
 from .benchmark import BenchmarkRunner, PolicySpec
 from .calibration import ThresholdCalibrator
 from .config import load_models, load_preferences, load_requests, load_rules, request_from_dict
@@ -36,7 +36,9 @@ def _add_catalog_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--models", required=True, help="JSON model catalog")
     parser.add_argument("--preferences", help="JSON user-profile file")
     parser.add_argument("--rules", help="JSON routing-rule file")
-    parser.add_argument("--policy", choices=("rule", "pareto", "linucb"), default="rule")
+    parser.add_argument(
+        "--policy", choices=("rule", "pareto", "linucb", "thompson"), default="rule"
+    )
     parser.add_argument("--state", help="LinUCB JSON state path")
     parser.add_argument("--alpha", type=float, default=0.35, help="LinUCB exploration factor")
     parser.add_argument(
@@ -58,11 +60,16 @@ def _build_router(
         return RuleRouter(models, preferences, rules)
     if policy_name == "pareto":
         return ParetoRouter(models, preferences, rules)
+    # Both bandits keep the same per-arm posterior, so a saved state loads under
+    # either. Only the way a score is drawn from it differs.
+    thompson = policy_name == "thompson"
+    policy_type = ThompsonPolicy if thompson else LinUCBPolicy
     if state_path and Path(state_path).exists():
-        bandit = LinUCBPolicy.load(state_path)
+        bandit = policy_type.load(state_path)
     else:
-        bandit = LinUCBPolicy((model.model_id for model in models), alpha=alpha)
-    return LinUCBRouter(
+        bandit = policy_type((model.model_id for model in models), alpha=alpha)
+    router_type = ThompsonRouter if thompson else LinUCBRouter
+    return router_type(
         models,
         preferences,
         rules,
@@ -144,8 +151,8 @@ def _parse_context(value: str) -> tuple[float, ...]:
 
 
 def _run_feedback(args: argparse.Namespace) -> int:
-    if args.policy == "linucb" and not args.context:
-        raise ValueError("--context is required for --policy linucb feedback")
+    if args.policy in {"linucb", "thompson"} and not args.context:
+        raise ValueError(f"--context is required for --policy {args.policy} feedback")
     event = FeedbackEvent(
         request_id=args.request_id,
         user_id=args.user,
@@ -159,9 +166,11 @@ def _run_feedback(args: argparse.Namespace) -> int:
     )
     policy: LinUCBPolicy | None = None
     if args.state:
-        if args.policy != "linucb":
-            raise ValueError("--state updates are only valid for --policy linucb")
-        policy = LinUCBPolicy.load(args.state)
+        if args.policy not in {"linucb", "thompson"}:
+            raise ValueError(
+                "--state updates are only valid for --policy linucb or --policy thompson"
+            )
+        policy = (ThompsonPolicy if args.policy == "thompson" else LinUCBPolicy).load(args.state)
         policy.update(event.model_id, event.context_vector, event.reward)
     FeedbackLog(args.log).append(event)
     if policy is not None:
@@ -201,7 +210,7 @@ def _run_benchmark(args: argparse.Namespace) -> int:
     rules = load_rules(args.rules)
     traces = load_traces(args.traces)
     policies: list[PolicySpec] = []
-    selected = set(args.policy or ("rule", "pareto", "linucb", "fixed"))
+    selected = set(args.policy or ("rule", "pareto", "linucb", "thompson", "fixed"))
     if "rule" in selected:
         policies.append(PolicySpec("rule", router=RuleRouter(models, preferences, rules)))
     if "pareto" in selected:
@@ -215,6 +224,20 @@ def _run_benchmark(args: argparse.Namespace) -> int:
                     preferences,
                     rules,
                     policy=LinUCBPolicy((model.model_id for model in models), alpha=args.alpha),
+                    prior_weight=args.prior_weight,
+                ),
+                learn_online=True,
+            )
+        )
+    if "thompson" in selected:
+        policies.append(
+            PolicySpec(
+                "thompson-online",
+                router=ThompsonRouter(
+                    models,
+                    preferences,
+                    rules,
+                    policy=ThompsonPolicy((model.model_id for model in models), alpha=args.alpha),
                     prior_weight=args.prior_weight,
                 ),
                 learn_online=True,
@@ -346,7 +369,9 @@ def build_parser() -> argparse.ArgumentParser:
     feedback.add_argument("--user", required=True)
     feedback.add_argument("--model", required=True)
     feedback.add_argument("--reward", required=True, type=float)
-    feedback.add_argument("--policy", choices=("rule", "pareto", "linucb"), required=True)
+    feedback.add_argument(
+        "--policy", choices=("rule", "pareto", "linucb", "thompson"), required=True
+    )
     feedback.add_argument("--context", help="JSON numeric vector; required for state update")
     feedback.add_argument("--state", help="existing LinUCB state to update")
     feedback.add_argument("--success", action=argparse.BooleanOptionalAction, default=True)
@@ -378,7 +403,7 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument(
         "--policy",
         action="append",
-        choices=("rule", "pareto", "linucb", "fixed"),
+        choices=("rule", "pareto", "linucb", "thompson", "fixed"),
         default=[],
         help="policy to include; repeatable (default: all)",
     )
