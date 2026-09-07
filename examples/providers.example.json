@@ -1,0 +1,27 @@
+{
+  "models": [
+    {
+      "model_id": "local-sparrow",
+      "upstream_model": "local/sparrow",
+      "base_url": "http://127.0.0.1:8001/v1"
+    },
+    {
+      "model_id": "cobalt-chat",
+      "upstream_model": "vendor/cobalt-v1",
+      "base_url": "https://api.vendor.example/v1",
+      "api_key_env": "VENDOR_API_KEY"
+    },
+    {
+      "model_id": "marble-reasoner",
+      "upstream_model": "vendor/reasoner-v1",
+      "base_url": "https://api.vendor.example/v1",
+      "api_key_env": "VENDOR_API_KEY"
+    },
+    {
+      "model_id": "lotus-polyglot",
+      "upstream_model": "vendor/polyglot-v1",
+      "base_url": "https://api.vendor.example/v1",
+      "api_key_env": "VENDOR_API_KEY"
+    }
+  ]
+}

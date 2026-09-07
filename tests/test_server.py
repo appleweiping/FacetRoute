@@ -12,8 +12,19 @@ from io import BytesIO
 import pytest
 
 from facetroute.errors import ConfigurationError
+from facetroute.providers import (
+    ProviderError,
+    ProviderFailure,
+    ProviderRegistry,
+    ProviderTarget,
+)
 from facetroute.routers import RuleRouter
-from facetroute.server import FacetRouteHandler, create_server, route_request_from_http
+from facetroute.server import (
+    FacetRouteHandler,
+    chat_completion_from_http,
+    create_server,
+    route_request_from_http,
+)
 from facetroute.types import ModelCandidate, RouteRequest
 
 # These talk to a local server running in a background thread, so the timeout
@@ -22,6 +33,65 @@ from facetroute.types import ModelCandidate, RouteRequest
 # every call; a generous bound removes the flake without weakening a single
 # assertion, and a genuine hang still fails the run.
 SOCKET_TIMEOUT_SECONDS = 30
+
+
+class RecordingProvider:
+    def __init__(
+        self,
+        *,
+        complete_failure: ProviderFailure | None = None,
+        stream_failure: ProviderFailure | None = None,
+    ) -> None:
+        self.calls: list[tuple[str, dict[str, object], float]] = []
+        self.complete_failure = complete_failure
+        self.stream_failure = stream_failure
+
+    def complete(self, payload, *, model, timeout_seconds):
+        self.calls.append((model, dict(payload), timeout_seconds))
+        if self.complete_failure is not None:
+            raise ProviderError(self.complete_failure)
+        return {
+            "id": "chatcmpl-fake",
+            "object": "chat.completion",
+            "created": 1,
+            "model": model,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "fixture answer"},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 2, "completion_tokens": 2, "total_tokens": 4},
+        }
+
+    def stream(self, payload, *, model, timeout_seconds):
+        self.calls.append((model, dict(payload), timeout_seconds))
+        yield {
+            "id": "chatcmpl-fake",
+            "object": "chat.completion.chunk",
+            "created": 1,
+            "model": model,
+            "choices": [{"index": 0, "delta": {"content": "fixture"}}],
+        }
+        if self.stream_failure is not None:
+            raise ProviderError(self.stream_failure)
+        yield {
+            "id": "chatcmpl-fake",
+            "object": "chat.completion.chunk",
+            "created": 1,
+            "model": model,
+            "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+        }
+
+
+def _provider_registry(provider: RecordingProvider) -> ProviderRegistry:
+    return ProviderRegistry(
+        tuple(
+            ProviderTarget(model_id, f"provider/{model_id}-v1", provider)
+            for model_id in ("cheap", "balanced", "quality")
+        )
+    )
 
 
 @contextmanager
@@ -65,6 +135,185 @@ def request_json(
     response_headers = {key.lower(): value for key, value in response.getheaders()}
     connection.close()
     return response.status, payload, response_headers
+
+
+def request_sse(address: tuple[str, int], body: object) -> tuple[int, str, dict[str, str]]:
+    connection = http.client.HTTPConnection(*address, timeout=SOCKET_TIMEOUT_SECONDS)
+    data = json.dumps(body).encode()
+    connection.request(
+        "POST",
+        "/v1/chat/completions",
+        body=data,
+        headers={"Content-Type": "application/json"},
+    )
+    response = connection.getresponse()
+    text = response.read().decode("utf-8")
+    headers = {key.lower(): value for key, value in response.getheaders()}
+    connection.close()
+    return response.status, text, headers
+
+
+def test_chat_completion_routes_then_executes_injected_provider(three_models):
+    provider = RecordingProvider()
+    with running_server(three_models, provider_registry=_provider_registry(provider)) as address:
+        status, body, headers = request_json(
+            address,
+            "POST",
+            "/v1/chat/completions",
+            {
+                "model": "facetroute",
+                "messages": [{"role": "user", "content": "Use a tool to calculate 2+2"}],
+                "tools": [{"type": "function", "function": {"name": "calculator"}}],
+                "temperature": 0,
+                "user": "customer-1",
+                "facetroute": {"max_cost_usd": 1.0, "metadata": {"tenant": "test"}},
+            },
+        )
+
+    assert status == 200
+    assert body["object"] == "chat.completion"
+    assert body["choices"][0]["message"]["content"] == "fixture answer"
+    assert headers["x-facetroute-model"] == "quality"
+    assert headers["x-facetroute-policy"] == "rule"
+    upstream_model, forwarded, timeout = provider.calls[0]
+    assert upstream_model == "provider/quality-v1"
+    assert timeout == 60.0
+    assert forwarded["model"] == "facetroute"
+    assert forwarded["user"] == "customer-1"
+    assert "facetroute" not in forwarded
+
+
+def test_chat_completion_stream_is_chunked_sse_with_terminal_marker(three_models):
+    provider = RecordingProvider()
+    with running_server(three_models, provider_registry=_provider_registry(provider)) as address:
+        status, body, headers = request_sse(
+            address,
+            {
+                "model": "facetroute",
+                "messages": [{"role": "user", "content": "Calculate 2+2 with a tool"}],
+                "tools": [{"type": "function"}],
+                "stream": True,
+                "stream_options": {"include_usage": True},
+            },
+        )
+
+    assert status == 200
+    assert headers["content-type"].startswith("text/event-stream")
+    assert headers["transfer-encoding"] == "chunked"
+    assert body.count("chat.completion.chunk") == 2
+    assert body.endswith("data: [DONE]\n\n")
+
+
+def test_midstream_provider_failure_is_a_redacted_sse_error(three_models):
+    provider = RecordingProvider(stream_failure=ProviderFailure.FAILED)
+    with running_server(three_models, provider_registry=_provider_registry(provider)) as address:
+        status, body, _ = request_sse(
+            address,
+            {
+                "model": "facetroute",
+                "messages": [{"role": "user", "content": "Use a tool"}],
+                "tools": [{"type": "function"}],
+                "stream": True,
+            },
+        )
+
+    assert status == 200
+    assert '"code":"upstream_failed"' in body
+    assert "[DONE]" not in body
+
+
+@pytest.mark.parametrize(
+    "failure, expected_status",
+    [
+        (ProviderFailure.REJECTED, 502),
+        (ProviderFailure.MALFORMED, 502),
+        (ProviderFailure.RATE_LIMITED, 503),
+        (ProviderFailure.UNAVAILABLE, 503),
+        (ProviderFailure.TIMEOUT, 504),
+    ],
+)
+def test_provider_failures_are_redacted_and_mapped(failure, expected_status, three_models):
+    provider = RecordingProvider(complete_failure=failure)
+    with running_server(three_models, provider_registry=_provider_registry(provider)) as address:
+        status, body, _ = request_json(
+            address,
+            "POST",
+            "/v1/chat/completions",
+            {
+                "model": "facetroute",
+                "messages": [{"role": "user", "content": "Use a tool"}],
+                "tools": [{"type": "function"}],
+            },
+        )
+    assert status == expected_status
+    assert body["error"]["code"] == failure.value
+    assert "Traceback" not in body["error"]["message"]
+
+
+def test_stream_failure_before_first_event_returns_http_error(three_models):
+    class FailingStreamProvider(RecordingProvider):
+        def stream(self, payload, *, model, timeout_seconds):
+            self.calls.append((model, dict(payload), timeout_seconds))
+            yield from ()
+            raise ProviderError(ProviderFailure.TIMEOUT)
+
+    provider = FailingStreamProvider()
+    with running_server(three_models, provider_registry=_provider_registry(provider)) as address:
+        status, body, _ = request_json(
+            address,
+            "POST",
+            "/v1/chat/completions",
+            {
+                "model": "facetroute",
+                "messages": [{"role": "user", "content": "Use a tool"}],
+                "tools": [{"type": "function"}],
+                "stream": True,
+            },
+        )
+    assert status == 504
+    assert body["error"]["code"] == "upstream_timeout"
+
+
+def test_proxy_disabled_returns_structured_503(three_models):
+    body = {
+        "model": "facetroute",
+        "messages": [{"role": "user", "content": "Use a tool"}],
+        "tools": [{"type": "function"}],
+    }
+    with running_server(three_models) as address:
+        status, payload, _ = request_json(address, "POST", "/v1/chat/completions", body)
+    assert status == 503
+    assert payload["error"]["code"] == "provider_not_configured"
+
+
+def test_chat_completion_parser_rejects_ambiguous_or_unsafe_shapes():
+    valid = {
+        "model": "facetroute",
+        "messages": [{"role": "user", "content": "hello"}],
+    }
+    request, forwarded, stream = chat_completion_from_http(valid, request_id="request-1")
+    assert request.request_id == "request-1"
+    assert forwarded["stream"] is False
+    assert not stream
+
+    invalid = (
+        {**valid, "model": "quality"},
+        {**valid, "stream": "yes"},
+        {**valid, "temperature": float("nan")},
+        {**valid, "n": True},
+        {**valid, "max_tokens": 1, "max_completion_tokens": 1},
+        {**valid, "top_logprobs": 2},
+        {**valid, "stream_options": {"include_usage": True}},
+        {**valid, "stop": ["a", "b", "c", "d", "e"]},
+        {**valid, "logit_bias": {"1": True}},
+        {**valid, "tools": [{}] * 129},
+        {**valid, "tool_choice": True},
+        {**valid, "messages": [{"role": "user", "content": "x", "name": 4}]},
+        {**valid, "facetroute": {"provider_url": "http://attacker.invalid"}},
+    )
+    for payload in invalid:
+        with pytest.raises(ConfigurationError):
+            chat_completion_from_http(payload, request_id="request-1")
 
 
 def test_health_models_and_native_route(three_models):
@@ -136,7 +385,7 @@ def test_bearer_authentication_and_request_id_sanitization(three_models):
     assert safe_headers["x-request-id"] != "bad\tidentifier"
 
 
-def test_response_boundary_strips_request_id_line_breaks():
+def test_response_boundary_encodes_all_unsafe_header_characters():
     handler = object.__new__(FacetRouteHandler)
     emitted_headers: list[tuple[str, str]] = []
     handler.close_connection = False
@@ -151,9 +400,11 @@ def test_response_boundary_strips_request_id_line_breaks():
         HTTPStatus.OK,
         {"status": "ok"},
         "trusted\r\nX-Injected: yes\n",
+        extra_headers={"X-Test": "model\r\nInjected: 是"},
     )
 
-    assert ("X-Request-ID", "trustedX-Injected: yes") in emitted_headers
+    assert ("X-Request-ID", "trusted%0D%0AX-Injected%3A%20yes%0A") in emitted_headers
+    assert ("X-Test", "model%0D%0AInjected%3A%20%E6%98%AF") in emitted_headers
     assert all("\r" not in value and "\n" not in value for _, value in emitted_headers)
 
 
@@ -362,3 +613,10 @@ def test_server_configuration_validation(three_models: tuple[ModelCandidate, ...
         create_server(router, three_models, port=70_000)
     with pytest.raises(ValueError, match="port"):
         create_server(router, three_models, port=True)
+    provider = RecordingProvider()
+    incomplete = ProviderRegistry((ProviderTarget("quality", "upstream", provider),))
+    with pytest.raises(ValueError, match="missing enabled catalog models"):
+        create_server(router, three_models, provider_registry=incomplete)
+    unknown = ProviderRegistry((ProviderTarget("unknown", "upstream", provider),))
+    with pytest.raises(ValueError, match="unknown catalog models"):
+        create_server(router, three_models, provider_registry=unknown)

@@ -1,4 +1,4 @@
-"""Command-line interface for fully offline routing workflows."""
+"""Command-line interface for offline evaluation and optional provider serving."""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ from .calibration import ThresholdCalibrator
 from .config import load_models, load_preferences, load_requests, load_rules, request_from_dict
 from .errors import FacetRouteError
 from .feedback import FeedbackEvent, FeedbackLog
+from .providers import load_provider_registry
 from .reporting import (
     write_benchmark_csv,
     write_benchmark_html,
@@ -343,6 +344,25 @@ def _run_serve(args: argparse.Namespace) -> int:
             "non-loopback binding requires a bearer token environment variable or "
             "--allow-unauthenticated-nonloopback"
         )
+    providers = None
+    if args.providers:
+        providers = load_provider_registry(
+            args.providers,
+            allow_insecure_http=args.allow_insecure_provider_http,
+            max_response_bytes=args.max_provider_response_bytes,
+            max_stream_bytes=args.max_provider_stream_bytes,
+            max_event_bytes=args.max_provider_event_bytes,
+        )
+        unknown_models = providers.model_ids - {model.model_id for model in models}
+        if unknown_models:
+            raise ValueError(
+                f"provider configuration references unknown catalog models: {sorted(unknown_models)}"
+            )
+        missing_models = {model.model_id for model in models if model.enabled} - providers.model_ids
+        if missing_models:
+            raise ValueError(
+                f"provider configuration is missing enabled catalog models: {sorted(missing_models)}"
+            )
     server = create_server(
         router,
         models,
@@ -352,6 +372,8 @@ def _run_serve(args: argparse.Namespace) -> int:
         max_concurrency=args.max_concurrency,
         request_timeout_seconds=args.request_timeout,
         bearer_token=token,
+        provider_registry=providers,
+        provider_timeout_seconds=args.provider_timeout,
     )
     raw_host, port = server.server_address[:2]
     host = raw_host.decode("ascii") if isinstance(raw_host, bytes) else str(raw_host)
@@ -495,7 +517,7 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark.set_defaults(handler=_run_benchmark)
 
     serve = commands.add_parser(
-        "serve", help="serve routing decisions without proxying provider requests"
+        "serve", help="serve routing decisions and an optional chat-completions proxy"
     )
     _add_catalog_arguments(serve)
     serve.add_argument("--host", default="127.0.0.1")
@@ -503,6 +525,19 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--max-body-bytes", type=int, default=262_144)
     serve.add_argument("--max-concurrency", type=int, default=32)
     serve.add_argument("--request-timeout", type=float, default=10.0)
+    serve.add_argument(
+        "--providers",
+        help="JSON catalog-model to OpenAI-compatible provider bindings",
+    )
+    serve.add_argument("--provider-timeout", type=float, default=60.0)
+    serve.add_argument("--max-provider-response-bytes", type=int, default=16 * 1024 * 1024)
+    serve.add_argument("--max-provider-stream-bytes", type=int, default=64 * 1024 * 1024)
+    serve.add_argument("--max-provider-event-bytes", type=int, default=1024 * 1024)
+    serve.add_argument(
+        "--allow-insecure-provider-http",
+        action="store_true",
+        help="allow plain HTTP to non-loopback providers (unsafe)",
+    )
     serve.add_argument(
         "--token-env",
         default="FACETROUTE_BEARER_TOKEN",

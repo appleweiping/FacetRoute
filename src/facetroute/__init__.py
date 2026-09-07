@@ -26,6 +26,15 @@ from .features import CONTEXT_DIMENSION, QueryFeatureExtractor
 from .feedback import FeedbackEvent, FeedbackLog, ModelFeedbackSummary
 from .pareto import dominates, pareto_front
 from .profiles import PreferenceStore
+from .providers import (
+    ChatCompletionProvider,
+    OpenAICompatibleProvider,
+    ProviderError,
+    ProviderFailure,
+    ProviderRegistry,
+    ProviderTarget,
+    load_provider_registry,
+)
 from .reporting import (
     benchmark_rows,
     write_benchmark_csv,
@@ -36,7 +45,12 @@ from .reporting import (
 from .routers import BatchRouter, BatchRouteResult, ParetoRouter, RuleRouter
 from .rules import RoutingRule
 from .scoring import MultiObjectiveScorer
-from .server import FacetRouteHTTPServer, create_server, route_request_from_http
+from .server import (
+    FacetRouteHTTPServer,
+    chat_completion_from_http,
+    create_server,
+    route_request_from_http,
+)
 from .simulator import EvaluationReport, OfflineSimulator, SimulationObservation
 from .splitting import TracePartitions, split_traces, write_trace_partitions
 from .traces import (
@@ -60,7 +74,7 @@ from .types import (
 try:
     __version__ = version("facetroute")
 except PackageNotFoundError:  # pragma: no cover - source tree without installation
-    __version__ = "0.4.0"
+    __version__ = "0.5.0"
 
 __all__ = [
     "CONTEXT_DIMENSION",
@@ -74,6 +88,7 @@ __all__ = [
     "BenchmarkRunner",
     "CalibrationPoint",
     "CalibrationReport",
+    "ChatCompletionProvider",
     "ConfigurationError",
     "ConstraintEngine",
     "ConstraintResult",
@@ -90,10 +105,15 @@ __all__ = [
     "MultiObjectiveScorer",
     "NoEligibleModelError",
     "OfflineSimulator",
+    "OpenAICompatibleProvider",
     "ParetoRouter",
     "PersistenceError",
     "PolicySpec",
     "PreferenceStore",
+    "ProviderError",
+    "ProviderFailure",
+    "ProviderRegistry",
+    "ProviderTarget",
     "QueryFeatureExtractor",
     "QueryFeatures",
     "RouteDecision",
@@ -108,11 +128,13 @@ __all__ = [
     "TracePartitions",
     "UserPreferences",
     "benchmark_rows",
+    "chat_completion_from_http",
     "create_server",
     "dominates",
     "file_sha256",
     "iter_traces",
     "load_benchmark_examples",
+    "load_provider_registry",
     "load_traces",
     "pareto_front",
     "route_request_from_http",

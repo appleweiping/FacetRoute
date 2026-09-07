@@ -229,3 +229,102 @@ def test_serve_cli_guards_nonloopback_binding(capsys):
     assert _is_loopback("localhost")
     assert _is_loopback("::1")
     assert not _is_loopback("router.example")
+
+
+def test_serve_cli_loads_provider_registry_and_passes_bounds(monkeypatch, capsys):
+    class FakeRegistry:
+        model_ids = frozenset({"local-sparrow", "cobalt-chat", "marble-reasoner", "lotus-polyglot"})
+
+    class FakeServer:
+        server_address = ("127.0.0.1", 8124)
+
+        def serve_forever(self):
+            return None
+
+        def server_close(self):
+            return None
+
+    load_options: dict[str, object] = {}
+    server_options: dict[str, object] = {}
+    registry = FakeRegistry()
+
+    def fake_load(path, **kwargs):
+        load_options["path"] = path
+        load_options.update(kwargs)
+        return registry
+
+    def fake_create(_router, _models, **kwargs):
+        server_options.update(kwargs)
+        return FakeServer()
+
+    monkeypatch.setattr("facetroute.cli.load_provider_registry", fake_load)
+    monkeypatch.setattr("facetroute.cli.create_server", fake_create)
+    code = main(
+        [
+            "serve",
+            "--models",
+            str(EXAMPLES / "models.json"),
+            "--providers",
+            "providers.json",
+            "--provider-timeout",
+            "7",
+            "--max-provider-response-bytes",
+            "1000",
+            "--max-provider-stream-bytes",
+            "2000",
+            "--max-provider-event-bytes",
+            "300",
+        ]
+    )
+
+    assert code == 0
+    assert load_options == {
+        "path": "providers.json",
+        "allow_insecure_http": False,
+        "max_response_bytes": 1000,
+        "max_stream_bytes": 2000,
+        "max_event_bytes": 300,
+    }
+    assert server_options["provider_registry"] is registry
+    assert server_options["provider_timeout_seconds"] == 7
+    assert "127.0.0.1:8124" in capsys.readouterr().err
+
+
+def test_serve_cli_rejects_provider_models_outside_catalog(monkeypatch, capsys):
+    class FakeRegistry:
+        model_ids = frozenset({"unknown-model"})
+
+    monkeypatch.setattr(
+        "facetroute.cli.load_provider_registry", lambda _path, **_kwargs: FakeRegistry()
+    )
+    code = main(
+        [
+            "serve",
+            "--models",
+            str(EXAMPLES / "models.json"),
+            "--providers",
+            "providers.json",
+        ]
+    )
+    assert code == 2
+    assert "unknown catalog models" in capsys.readouterr().err
+
+
+def test_serve_cli_rejects_missing_enabled_provider_models(monkeypatch, capsys):
+    class FakeRegistry:
+        model_ids = frozenset({"local-sparrow"})
+
+    monkeypatch.setattr(
+        "facetroute.cli.load_provider_registry", lambda _path, **_kwargs: FakeRegistry()
+    )
+    code = main(
+        [
+            "serve",
+            "--models",
+            str(EXAMPLES / "models.json"),
+            "--providers",
+            "providers.json",
+        ]
+    )
+    assert code == 2
+    assert "missing enabled catalog models" in capsys.readouterr().err

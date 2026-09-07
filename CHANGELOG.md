@@ -6,6 +6,25 @@ Notable changes are recorded here. Versions follow semantic versioning.
 
 _No changes yet._
 
+## [0.5.0] - 2026-09-07
+
+### Added
+
+- Optional OpenAI-compatible `POST /v1/chat/completions` execution after the
+  selected catalog model is resolved through a fixed provider registry.
+- A typed, injectable provider protocol and zero-dependency HTTP executor with
+  non-streaming JSON and bounded SSE support.
+- Environment-only provider credentials, fixed upstream model mappings,
+  loopback-only plain HTTP by default, response/event byte limits, redacted
+  upstream errors, and routed model/policy response headers.
+- End-to-end tests through both injected fake providers and a loopback
+  OpenAI-compatible fixture server; no API key or external network is required.
+
+### Changed
+
+- `facetroute serve` can load provider bindings with `--providers`; without the
+  option it remains the previous decision-only service.
+
 ## [0.4.0] - 2026-09-07
 
 ### Added

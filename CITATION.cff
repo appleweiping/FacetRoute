@@ -6,11 +6,12 @@ authors:
   - family-names: "Yan"
     given-names: "Weiping"
     alias: "appleweiping"
-version: 0.4.0
+version: 0.5.0
 date-released: 2026-09-07
 license: MIT
 repository-code: "https://github.com/appleweiping/FacetRoute"
 url: "https://github.com/appleweiping/FacetRoute"
 abstract: >-
   An offline-first Python toolkit for constraint-aware, explainable routing
-  across declared language-model candidates with deterministic and adaptive policies.
+  across declared language-model candidates, with deterministic and adaptive
+  policies plus optional OpenAI-compatible provider execution.

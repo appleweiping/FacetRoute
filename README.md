@@ -8,12 +8,14 @@
 FacetRoute is an original, offline-first Python library for choosing among a
 declared set of large-language-model candidates. It treats routing as a
 transparent decision problem: reject models that cannot satisfy the request,
-score the remaining trade-offs, explain the result, and optionally learn from
-local feedback.
+score the remaining trade-offs, explain the result, optionally learn from
+local feedback, and—only when explicitly configured—execute the selected model
+through an OpenAI-compatible provider.
 
-It does **not** call an LLM provider, download a model, require an API key, or
-send telemetry. The core package has no runtime dependencies beyond Python
-3.11 or newer.
+Offline routing, simulation, calibration, and benchmarks never call a provider,
+download a model, require an API key, or send telemetry. The optional proxy is
+disabled unless a provider-binding file is supplied. The package retains zero
+runtime dependencies beyond Python 3.11 or newer.
 
 ## Why this project exists
 
@@ -28,8 +30,9 @@ conditionals, and learned scores. FacetRoute separates those concerns:
 - counterfactual benchmarks and calibration measure behavior before a policy
   is used in an application.
 
-FacetRoute selects a model identifier. Your application remains responsible
-for authentication, prompts, provider calls, retries, and output validation.
+Applications can use FacetRoute only for model selection or opt into its narrow
+provider boundary. Provider credentials always come from named environment
+variables rather than request bodies or configuration-file values.
 
 ## Architecture
 
@@ -50,6 +53,9 @@ flowchart LR
     U --> D
     D --> E[Offline simulation]
     D --> APP[Caller/provider adapter]
+    D --> PX[Optional chat-completions proxy]
+    REG[Fixed provider registry] --> PX
+    PX --> UP[OpenAI-compatible upstream]
     APP --> FB[FeedbackEvent JSONL]
     E --> FB
     FB --> U
@@ -100,9 +106,11 @@ change preferences; neither can make an ineligible model selectable.
   from the routing prompt, and every normalized request receives a stable ID.
 - **Portable reports**: deterministic JSON, analysis-ready CSV, and a
   standalone HTML table with an embedded reproducibility manifest.
-- **Decision service**: standard-library `/health`, `/v1/models`, and
-  `/v1/route` endpoints with bounded request bodies and concurrency, socket
-  timeouts, optional bearer authentication, and structured error semantics.
+- **Decision and execution service**: standard-library `/health`, `/v1/models`,
+  `/v1/route`, and optional `/v1/chat/completions` endpoints with bounded
+  request/response/event sizes, concurrency and timeouts; non-streaming JSON and
+  chunked SSE; injectable providers; environment-only credentials; optional
+  bearer authentication; and redacted structured upstream failures.
 - **CLI**: `route`, `simulate`, `feedback`, `report`, `split-traces`, `calibrate`,
   `benchmark`, `normalize-benchmark`, and `serve`.
 
@@ -603,10 +611,42 @@ export FACETROUTE_BEARER_TOKEN='replace-with-a-secret'
 facetroute serve --models examples/models.json --host 0.0.0.0
 ```
 
-The service accepts the native request or a text-only subset of an OpenAI
-chat-shaped request. It returns a **routing decision**, never `choices`; it
-does not forward the prompt, execute the model, or claim to be an OpenAI API
-proxy. See [the HTTP contract](docs/http-api.md).
+`POST /v1/route` accepts the native request or a text-only subset of an OpenAI
+chat-shaped request and returns a routing decision without executing it.
+
+To enable actual chat completions, bind every enabled catalog ID to a fixed
+upstream model (the abbreviated example below shows one record):
+
+```json
+{
+  "models": [
+    {
+      "model_id": "marble-reasoner",
+      "upstream_model": "vendor/reasoner-v1",
+      "base_url": "https://api.vendor.example/v1",
+      "api_key_env": "VENDOR_API_KEY"
+    }
+  ]
+}
+```
+
+```bash
+export VENDOR_API_KEY='replace-with-a-secret'
+facetroute serve \
+  --models examples/models.json \
+  --providers providers.json \
+  --policy pareto
+
+curl -N http://127.0.0.1:8080/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"facetroute","messages":[{"role":"user","content":"Explain this proof"}],"stream":true}'
+```
+
+The incoming virtual model is always `facetroute`; the selected catalog ID is
+reported in `X-FacetRoute-Model`, while only the registry's fixed upstream name
+is sent to the provider. A `facetroute` request object can carry cost, latency,
+region, capability, sensitivity, task, context, and metadata constraints and is
+removed before forwarding. See [the complete HTTP contract](docs/http-api.md).
 
 ## Simulation metrics
 
@@ -641,13 +681,21 @@ metrics while preserving the same `FeedbackEvent` contract.
   write the same stream.
 - User identifiers are opaque strings. FacetRoute does not collect attributes
   or decide which personalization is legally or ethically appropriate.
-- A selected model is not executed. Network behavior stays in the caller.
+- Offline commands and `/v1/route` never execute a selected model. The optional
+  `/v1/chat/completions` endpoint executes only fixed, locally configured
+  provider bindings.
 
 ## Privacy and safety defaults
 
-- no outbound provider calls, downloads, telemetry, or prompt forwarding;
+- no outbound calls, downloads, telemetry, or prompt forwarding unless the
+  operator explicitly starts `serve` with `--providers` and calls the chat
+  completion endpoint;
 - the optional inbound service binds to loopback by default, reads only its
   named bearer-token environment variable, and logs no headers or bodies;
+- provider URLs cannot come from requests; plain HTTP providers are restricted
+  to loopback unless the operator passes the explicit unsafe override;
+- literal provider secrets are rejected by the configuration schema; keys are
+  read from named environment variables and upstream error bodies are discarded;
 - no model/provider names embedded in core routing logic;
 - no automatic logging—callers must explicitly create a `FeedbackLog`;
 - no raw query text in `FeedbackEvent` by default;
@@ -673,8 +721,9 @@ The test suite covers validation, deterministic feature extraction, every
 constraint, score normalization, rules, Pareto dominance, batch errors,
 LinUCB learning and persistence, feedback integrity, strict traces,
 calibration, bootstrap benchmarking, reports, HTTP security/error boundaries,
-simulation, configuration, and all eight CLI commands. Tests are offline and
-use temporary directories.
+provider registry validation, routed completion execution, bounded OpenAI-style
+JSON/SSE handling, simulation, configuration, and all nine CLI commands. Tests
+are offline and use temporary directories and loopback-only fixture servers.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for change and disclosure expectations
 and [the release process](docs/releasing.md) for clean-install, SBOM, checksum,
