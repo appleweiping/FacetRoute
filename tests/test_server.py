@@ -14,6 +14,13 @@ from facetroute.routers import RuleRouter
 from facetroute.server import create_server, route_request_from_http
 from facetroute.types import ModelCandidate, RouteRequest
 
+# These talk to a local server running in a background thread, so the timeout
+# guards against a hang rather than measuring anything. Two seconds was tight
+# enough to fail intermittently under coverage instrumentation, which slows
+# every call; a generous bound removes the flake without weakening a single
+# assertion, and a genuine hang still fails the run.
+SOCKET_TIMEOUT_SECONDS = 30
+
 
 @contextmanager
 def running_server(models, *, router=None, **options: object) -> Iterator[tuple[str, int]]:
@@ -32,7 +39,7 @@ def running_server(models, *, router=None, **options: object) -> Iterator[tuple[
     finally:
         server.shutdown()
         server.server_close()
-        thread.join(timeout=2)
+        thread.join(timeout=SOCKET_TIMEOUT_SECONDS)
 
 
 def request_json(
@@ -43,7 +50,7 @@ def request_json(
     *,
     headers: dict[str, str] | None = None,
 ) -> tuple[int, dict[str, object], dict[str, str]]:
-    connection = http.client.HTTPConnection(*address, timeout=2)
+    connection = http.client.HTTPConnection(*address, timeout=SOCKET_TIMEOUT_SECONDS)
     data: bytes | None = (
         body if body is None or isinstance(body, bytes) else json.dumps(body).encode()
     )
@@ -176,7 +183,7 @@ def test_transfer_encoding_missing_and_invalid_lengths_are_rejected(three_models
             b'{"query":"x"}',
             headers={"Transfer-Encoding": "chunked"},
         )
-        connection = http.client.HTTPConnection(*address, timeout=2)
+        connection = http.client.HTTPConnection(*address, timeout=SOCKET_TIMEOUT_SECONDS)
         connection.putrequest("POST", "/v1/route")
         connection.putheader("Content-Type", "application/json")
         connection.endheaders()
@@ -184,7 +191,7 @@ def test_transfer_encoding_missing_and_invalid_lengths_are_rejected(three_models
         missing_body = json.loads(missing_response.read())
         connection.close()
 
-        raw = socket.create_connection(address, timeout=2)
+        raw = socket.create_connection(address, timeout=SOCKET_TIMEOUT_SECONDS)
         raw.sendall(
             b"POST /v1/route HTTP/1.1\r\nHost: local\r\n"
             b"Content-Type: application/json\r\nContent-Length: nope\r\n"
@@ -196,7 +203,7 @@ def test_transfer_encoding_missing_and_invalid_lengths_are_rejected(three_models
         invalid_response = b"".join(invalid_chunks)
         raw.close()
 
-        duplicate = socket.create_connection(address, timeout=2)
+        duplicate = socket.create_connection(address, timeout=SOCKET_TIMEOUT_SECONDS)
         duplicate.sendall(
             b"POST /v1/route HTTP/1.1\r\nHost: local\r\n"
             b"Content-Type: application/json\r\nContent-Length: 13\r\n"
@@ -232,7 +239,7 @@ def test_capacity_limit_returns_structured_503(three_models):
         server._capacity.release()
         server.shutdown()
         server.server_close()
-        thread.join(timeout=2)
+        thread.join(timeout=SOCKET_TIMEOUT_SECONDS)
 
     assert status == 503
     assert body["error"]["code"] == "server_busy"
