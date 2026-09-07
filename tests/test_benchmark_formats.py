@@ -5,11 +5,37 @@ import json
 import pytest
 
 from facetroute.benchmark_formats import (
+    BenchmarkExample,
     BenchmarkFormat,
     load_benchmark_examples,
     write_benchmark_examples,
 )
 from facetroute.errors import ConfigurationError
+
+
+def test_benchmark_example_invariants_and_request_limits():
+    with pytest.raises(ConfigurationError, match="example_id"):
+        BenchmarkExample(" ", BenchmarkFormat.GSM8K, "prompt", answer="answer")
+    with pytest.raises(ConfigurationError, match="prompt"):
+        BenchmarkExample("id", BenchmarkFormat.GSM8K, " ", answer="answer")
+    with pytest.raises(ConfigurationError, match="choices"):
+        BenchmarkExample("id", BenchmarkFormat.MMLU, "prompt", choices=("one",), answer=0)
+    with pytest.raises(ConfigurationError, match="answer"):
+        BenchmarkExample("id", BenchmarkFormat.MMLU, "prompt", choices=("one", "two"))
+    with pytest.raises(ConfigurationError, match="outside"):
+        BenchmarkExample("id", BenchmarkFormat.MMLU, "prompt", choices=("one", "two"), answer=2)
+    with pytest.raises(ConfigurationError, match="not one"):
+        BenchmarkExample("id", BenchmarkFormat.MMLU, "prompt", choices=("one", "two"), answer="x")
+    with pytest.raises(ConfigurationError, match="GSM8K"):
+        BenchmarkExample("id", BenchmarkFormat.GSM8K, "prompt", answer=" ")
+    with pytest.raises(ConfigurationError, match="turn"):
+        BenchmarkExample("id", BenchmarkFormat.MT_BENCH, "prompt")
+
+    example = BenchmarkExample("id", BenchmarkFormat.GSM8K, "prompt", answer="4")
+    with pytest.raises(ConfigurationError, match="expected_output_tokens"):
+        example.to_request(expected_output_tokens=True)
+    with pytest.raises(ConfigurationError, match="expected_output_tokens"):
+        example.to_request(expected_output_tokens=-1)
 
 
 def test_mmlu_json_array_is_normalized_without_answer_leakage(tmp_path):
@@ -78,6 +104,55 @@ def test_format_override_and_validation_reject_ambiguous_or_duplicate_records(tm
     ambiguous.write_text(json.dumps({"question": "only a question"}), encoding="utf-8")
     with pytest.raises(ConfigurationError, match="cannot detect"):
         load_benchmark_examples(ambiguous)
+
+    with pytest.raises(ConfigurationError, match="unknown benchmark format"):
+        load_benchmark_examples(source, format="not-a-format")
+
+    mixed = tmp_path / "mixed.json"
+    mixed.write_text(
+        json.dumps(
+            [
+                {"question": "q", "choices": ["a", "b"], "answer": 0},
+                {"question": "q", "answer": "a"},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigurationError, match="mix"):
+        load_benchmark_examples(mixed)
+
+
+def test_limits_and_io_errors_are_explicit(tmp_path):
+    source = tmp_path / "mmlu.json"
+    source.write_text(
+        json.dumps({"question": "q", "choices": ["a", "b"], "answer": 0}), encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="limits"):
+        load_benchmark_examples(source, max_bytes=0)
+    with pytest.raises(ValueError, match="limits"):
+        load_benchmark_examples(source, max_records=0)
+    with pytest.raises(ConfigurationError, match="exceeds"):
+        load_benchmark_examples(source, max_bytes=1)
+    two = tmp_path / "two.jsonl"
+    two.write_text(
+        '{"question":"q","choices":["a","b"],"answer":0}\n'
+        '{"question":"q2","choices":["a","b"],"answer":1}\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigurationError, match="exceeds"):
+        load_benchmark_examples(two, max_records=1)
+    with pytest.raises(ConfigurationError, match="cannot read"):
+        load_benchmark_examples(tmp_path / "missing.json")
+
+    empty = tmp_path / "empty.jsonl"
+    empty.write_text("\n", encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="no records"):
+        load_benchmark_examples(empty)
+
+    malformed = tmp_path / "malformed.jsonl"
+    malformed.write_text('{"question":"q"}\nnot-json\n', encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="invalid benchmark JSON"):
+        load_benchmark_examples(malformed, format="mmlu")
 
 
 def test_canonical_writer_round_trips(tmp_path):
