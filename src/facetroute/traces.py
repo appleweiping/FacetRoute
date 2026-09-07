@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO, Protocol
 
 from ._json import loads_strict
 from .config import request_from_dict
@@ -40,6 +41,10 @@ _REQUEST_FIELDS = {
     "request_id",
     "metadata",
 }
+
+
+class _ByteDigest(Protocol):
+    def update(self, data: bytes, /) -> None: ...
 
 
 def _finite(name: str, value: Any, *, minimum: float = 0.0) -> float:
@@ -231,6 +236,45 @@ class RouteTrace:
         }
 
 
+def _iter_trace_stream(
+    source: Path,
+    handle: BinaryIO,
+    *,
+    max_line_bytes: int = 1_048_576,
+    max_records: int = 1_000_000,
+    digest: _ByteDigest | None = None,
+) -> Iterator[RouteTrace]:
+    seen_ids: set[str] = set()
+    count = 0
+    line_number = 0
+    while raw := handle.readline(max_line_bytes + 1):
+        if digest is not None:
+            digest.update(raw)
+        line_number += 1
+        if len(raw) > max_line_bytes:
+            raise ConfigurationError(
+                f"trace line exceeds {max_line_bytes} bytes at {source}:{line_number}"
+            )
+        if not raw.strip():
+            continue
+        count += 1
+        if count > max_records:
+            raise ConfigurationError(f"trace file exceeds {max_records} records")
+        try:
+            payload = loads_strict(raw)
+            if not isinstance(payload, dict):
+                raise ConfigurationError("trace line must be a JSON object")
+            trace = RouteTrace.from_dict(payload)
+        except (UnicodeDecodeError, ValueError, ConfigurationError) as exc:
+            raise ConfigurationError(f"invalid trace at {source}:{line_number}: {exc}") from exc
+        if trace.request.request_id in seen_ids:
+            raise ConfigurationError(
+                f"duplicate request_id at {source}:{line_number}: {trace.request.request_id}"
+            )
+        seen_ids.add(trace.request.request_id)
+        yield trace
+
+
 def iter_traces(
     path: str | Path,
     *,
@@ -242,38 +286,14 @@ def iter_traces(
     if max_line_bytes <= 0 or max_records <= 0:
         raise ValueError("trace limits must be positive")
     source = Path(path)
-    seen_ids: set[str] = set()
-    count = 0
     try:
         with source.open("rb") as handle:
-            line_number = 0
-            while raw := handle.readline(max_line_bytes + 1):
-                line_number += 1
-                if len(raw) > max_line_bytes:
-                    raise ConfigurationError(
-                        f"trace line exceeds {max_line_bytes} bytes at {source}:{line_number}"
-                    )
-                if not raw.strip():
-                    continue
-                count += 1
-                if count > max_records:
-                    raise ConfigurationError(f"trace file exceeds {max_records} records")
-                try:
-                    payload = loads_strict(raw)
-                    if not isinstance(payload, dict):
-                        raise ConfigurationError("trace line must be a JSON object")
-                    trace = RouteTrace.from_dict(payload)
-                except (UnicodeDecodeError, ValueError, ConfigurationError) as exc:
-                    raise ConfigurationError(
-                        f"invalid trace at {source}:{line_number}: {exc}"
-                    ) from exc
-                if trace.request.request_id in seen_ids:
-                    raise ConfigurationError(
-                        f"duplicate request_id at {source}:{line_number}: "
-                        f"{trace.request.request_id}"
-                    )
-                seen_ids.add(trace.request.request_id)
-                yield trace
+            yield from _iter_trace_stream(
+                source,
+                handle,
+                max_line_bytes=max_line_bytes,
+                max_records=max_records,
+            )
     except OSError as exc:
         raise ConfigurationError(f"cannot read trace file {source}: {exc}") from exc
 
@@ -283,6 +303,79 @@ def load_traces(path: str | Path, **limits: int) -> tuple[RouteTrace, ...]:
     if not traces:
         raise ConfigurationError("trace file contains no records")
     return traces
+
+
+def _load_traces_with_sha256(
+    path: str | Path,
+    *,
+    max_line_bytes: int = 1_048_576,
+    max_records: int = 1_000_000,
+) -> tuple[tuple[RouteTrace, ...], str]:
+    """Parse and hash the exact same source-file read for provenance-sensitive workflows."""
+
+    if max_line_bytes <= 0 or max_records <= 0:
+        raise ValueError("trace limits must be positive")
+    source = Path(path)
+    digest = hashlib.sha256()
+    try:
+        with source.open("rb") as handle:
+            traces = tuple(
+                _iter_trace_stream(
+                    source,
+                    handle,
+                    max_line_bytes=max_line_bytes,
+                    max_records=max_records,
+                    digest=digest,
+                )
+            )
+    except OSError as exc:
+        raise ConfigurationError(f"cannot read trace file {source}: {exc}") from exc
+    if not traces:
+        raise ConfigurationError("trace file contains no records")
+    return traces, digest.hexdigest()
+
+
+def traces_sha256(traces: tuple[RouteTrace, ...]) -> str:
+    """Hash the canonical, query-retaining JSONL representation of traces."""
+
+    if not traces:
+        raise ConfigurationError("cannot fingerprint an empty trace set")
+    digest = hashlib.sha256()
+    for trace in traces:
+        digest.update(
+            json.dumps(
+                trace.to_dict(),
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                allow_nan=False,
+            ).encode("utf-8")
+        )
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def write_traces(path: str | Path, traces: tuple[RouteTrace, ...]) -> None:
+    """Write traces as canonical JSONL for offline dataset preparation."""
+
+    if not traces:
+        raise ConfigurationError("cannot write an empty trace set")
+    target = Path(path)
+    body = "".join(
+        json.dumps(
+            trace.to_dict(),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+        + "\n"
+        for trace in traces
+    )
+    try:
+        target.write_text(body, encoding="utf-8", newline="\n")
+    except OSError as exc:
+        raise ConfigurationError(f"cannot write trace file {target}: {exc}") from exc
 
 
 def file_sha256(path: str | Path) -> str:

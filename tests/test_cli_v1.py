@@ -11,14 +11,14 @@ PROJECT_ROOT = Path(__file__).parents[1]
 EXAMPLES = PROJECT_ROOT / "examples"
 
 
-def _write_traces(path: Path) -> None:
+def _write_traces(path: Path, *, distinct_users: bool = False) -> None:
     records = []
     for index, score in enumerate((0.2, 0.7, 0.9)):
         records.append(
             RouteTrace(
                 RouteRequest(
                     f"Explain benchmark request {index}",
-                    user_id="default",
+                    user_id=f"user-{index}" if distinct_users else "default",
                     request_id=f"trace-{index}",
                 ),
                 {
@@ -63,6 +63,51 @@ def test_cli_calibrate_writes_json_and_csv(tmp_path, capsys):
     assert code == 0
     assert printed == json.loads(output.read_text(encoding="utf-8"))
     assert csv.read_text(encoding="utf-8").startswith("threshold,")
+
+
+def test_cli_split_then_calibrate_on_disjoint_holdout(tmp_path, capsys):
+    traces = tmp_path / "traces.jsonl"
+    output = tmp_path / "split"
+    _write_traces(traces, distinct_users=True)
+    assert (
+        main(
+            [
+                "split-traces",
+                "--traces",
+                str(traces),
+                "--output-dir",
+                str(output),
+                "--dataset-name",
+                "synthetic CLI fixture",
+                "--source-uri",
+                "local:test",
+                "--license",
+                "CC0-1.0",
+                "--group-by",
+                "user_id",
+            ]
+        )
+        == 0
+    )
+    split_manifest = json.loads(capsys.readouterr().out)
+    assert split_manifest["dataset"]["records"] == 3
+    assert (
+        main(
+            [
+                "calibrate",
+                "--traces",
+                str(output / "calibration.jsonl"),
+                "--held-out-traces",
+                str(output / "test.jsonl"),
+                "--held-out-group-by",
+                "user_id",
+            ]
+        )
+        == 0
+    )
+    report = json.loads(capsys.readouterr().out)
+    assert report["held_out"]["records"] == 1
+    assert report["held_out"]["leakage_check"]["group_by"] == "user_id"
 
 
 def test_cli_benchmark_runs_all_policies_and_artifacts(tmp_path, capsys):

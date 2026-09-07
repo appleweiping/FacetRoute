@@ -73,7 +73,9 @@ class MultiObjectiveScorer:
                     ),
                 )
             )
-        return tuple(sorted(scored, key=lambda item: (-item.breakdown.total, item.candidate.model_id)))
+        return tuple(
+            sorted(scored, key=lambda item: (-item.breakdown.total, item.candidate.model_id))
+        )
 
     @staticmethod
     def _inverse_minmax(value: float, values: list[float]) -> float:

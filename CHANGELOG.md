@@ -4,7 +4,26 @@ Notable changes are recorded here. Versions follow semantic versioning.
 
 ## [Unreleased]
 
+_No changes yet._
+
+## [0.3.0] - 2026-09-07
+
 ### Added
+
+- Added a tag-gated release pipeline with locked builds, clean wheel and sdist
+  installation checks, CycloneDX SBOM, SHA-256 manifest, and GitHub provenance.
+- Deterministic, size-aware, group-disjoint trace partitioning with explicit
+  dataset name, source URI, license, seed, requested/actual fractions and
+  deviations, group counts, and input/partition SHA-256 provenance. The writer
+  rejects source/output aliases and partitions inconsistent with their source.
+  Groups can be request IDs, users, or a declared metadata field.
+- Held-out threshold evaluation: calibration selects the operating point, then
+  applies it once to a disjoint trace. Overlap at a declared request, user, or
+  metadata leakage unit and model-pair drift are rejected. Both dataset hashes,
+  group audit, and complete held-out metrics are retained in report schema 2;
+  calibration without a held-out set remains wire-compatible schema 1.
+- Canonical trace writing/fingerprinting, a documented no-leakage experiment
+  protocol, CLI end-to-end coverage, and group-invariance tests.
 
 - `--policy thompson`: posterior sampling over the same per-arm state LinUCB already
   maintains. LinUCB explores by optimism, scoring every arm at the top of its confidence

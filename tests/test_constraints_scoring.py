@@ -29,13 +29,17 @@ def _filter(
 
 
 def test_disabled_model_is_rejected(make_model: Callable[..., ModelCandidate]) -> None:
-    result, _ = _filter((make_model(enabled=False),), RouteRequest(query="hi"), UserPreferences("u"))
+    result, _ = _filter(
+        (make_model(enabled=False),), RouteRequest(query="hi"), UserPreferences("u")
+    )
     assert "disabled" in result.rejected["balanced"][0]
 
 
 def test_blocked_model_is_rejected(make_model: Callable[..., ModelCandidate]) -> None:
     result, _ = _filter(
-        (make_model(),), RouteRequest(query="hi"), UserPreferences("u", blocked_models=frozenset({"balanced"}))
+        (make_model(),),
+        RouteRequest(query="hi"),
+        UserPreferences("u", blocked_models=frozenset({"balanced"})),
     )
     assert any("blocked" in reason for reason in result.rejected["balanced"])
 
@@ -57,7 +61,9 @@ def test_context_limit_counts_expected_output(make_model: Callable[..., ModelCan
 
 def test_tool_support_is_hard_constraint(make_model: Callable[..., ModelCandidate]) -> None:
     model = make_model(capabilities=frozenset({"text", "tools"}), supports_tools=False)
-    result, _ = _filter((model,), RouteRequest(query="tool", needs_tools=True), UserPreferences("u"))
+    result, _ = _filter(
+        (model,), RouteRequest(query="tool", needs_tools=True), UserPreferences("u")
+    )
     assert any("tool calling" in reason for reason in result.rejected["balanced"])
 
 
@@ -65,7 +71,9 @@ def test_tool_support_does_not_require_duplicate_capability(
     make_model: Callable[..., ModelCandidate],
 ) -> None:
     model = make_model(capabilities=frozenset({"text"}), supports_tools=True)
-    result, _ = _filter((model,), RouteRequest(query="tool", needs_tools=True), UserPreferences("u"))
+    result, _ = _filter(
+        (model,), RouteRequest(query="tool", needs_tools=True), UserPreferences("u")
+    )
     assert result.eligible == (model,)
 
 
@@ -87,11 +95,15 @@ def test_request_cannot_override_profile_required_region(
     assert "conflicts" in " ".join(result.rejected["balanced"])
 
 
-def test_restricted_request_requires_local_metadata(make_model: Callable[..., ModelCandidate]) -> None:
+def test_restricted_request_requires_local_metadata(
+    make_model: Callable[..., ModelCandidate],
+) -> None:
     remote = make_model("remote", metadata={"local": False})
     local = make_model("local", metadata={"local": True})
     result, _ = _filter(
-        (remote, local), RouteRequest(query="private", sensitivity="restricted"), UserPreferences("u")
+        (remote, local),
+        RouteRequest(query="private", sensitivity="restricted"),
+        UserPreferences("u"),
     )
     assert result.eligible == (local,)
     assert "restricted" in " ".join(result.rejected["remote"])
@@ -110,7 +122,9 @@ def test_restricted_request_requires_literal_boolean_local_marker(
     assert "restricted" in " ".join(result.rejected["balanced"])
 
 
-def test_request_and_profile_cost_limits_use_stricter_value(make_model: Callable[..., ModelCandidate]) -> None:
+def test_request_and_profile_cost_limits_use_stricter_value(
+    make_model: Callable[..., ModelCandidate],
+) -> None:
     model = make_model(input_cost_per_million=10, output_cost_per_million=10)
     request = RouteRequest(query="x", context_tokens=1000, expected_output_tokens=0, max_cost_usd=1)
     profile = UserPreferences("u", max_cost_usd=0.005)
@@ -128,7 +142,9 @@ def test_latency_and_quality_limits_are_enforced(make_model: Callable[..., Model
 
 def test_eligible_models_include_estimated_cost(make_model: Callable[..., ModelCandidate]) -> None:
     model = make_model()
-    result, _ = _filter((model,), RouteRequest(query="hello", context_tokens=100), UserPreferences("u"))
+    result, _ = _filter(
+        (model,), RouteRequest(query="hello", context_tokens=100), UserPreferences("u")
+    )
     assert result.eligible == (model,)
     assert result.estimated_costs["balanced"] > 0
 
@@ -136,7 +152,11 @@ def test_eligible_models_include_estimated_cost(make_model: Callable[..., ModelC
 def test_scorer_rewards_explicit_preference(three_models: tuple[ModelCandidate, ...]) -> None:
     request = RouteRequest(query="hello", user_id="u")
     profile = UserPreferences(
-        "u", quality_weight=1, cost_weight=0, latency_weight=0, preferred_models=frozenset({"cheap"})
+        "u",
+        quality_weight=1,
+        cost_weight=0,
+        latency_weight=0,
+        preferred_models=frozenset({"cheap"}),
     )
     filtered, features = _filter(three_models, request, profile)
     scored = MultiObjectiveScorer(preferred_model_bonus=0.5).score(
@@ -162,7 +182,9 @@ def test_equal_scores_break_ties_by_model_id(make_model: Callable[..., ModelCand
     request = RouteRequest(query="hello")
     profile = UserPreferences("default")
     filtered, features = _filter(models, request, profile)
-    scored = MultiObjectiveScorer().score(models, request, features, profile, filtered.estimated_costs)
+    scored = MultiObjectiveScorer().score(
+        models, request, features, profile, filtered.estimated_costs
+    )
     assert [item.candidate.model_id for item in scored] == ["a", "z"]
 
 
@@ -171,7 +193,10 @@ def test_rule_match_respects_task_and_difficulty() -> None:
         RouteRequest(query="plan step by step", task_hint="reasoning")
     )
     rule = RoutingRule(
-        name="deep", prefer_models=("quality",), tasks=frozenset({"reasoning"}), minimum_difficulty=0.3
+        name="deep",
+        prefer_models=("quality",),
+        tasks=frozenset({"reasoning"}),
+        minimum_difficulty=0.3,
     )
     bonuses, names = match_rules((rule,), features, {"quality"})
     assert bonuses == {"quality": rule.bonus}
@@ -191,7 +216,9 @@ def test_rule_json_rejects_string_instead_of_array() -> None:
         RoutingRule.from_dict({"name": "bad", "prefer_models": "model-a"})
 
 
-def test_pareto_front_removes_strictly_dominated_model(make_model: Callable[..., ModelCandidate]) -> None:
+def test_pareto_front_removes_strictly_dominated_model(
+    make_model: Callable[..., ModelCandidate],
+) -> None:
     winner = make_model("winner", quality_by_task={"default": 0.8}, latency_ms_p95=100)
     loser = make_model(
         "loser",

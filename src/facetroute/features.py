@@ -12,7 +12,9 @@ _CODE_MARKERS = re.compile(
     r"(```|\b(def|class|function|SELECT|INSERT|async|await|import|const|let|var)\b|[{};])",
     re.IGNORECASE,
 )
-_MATH_MARKERS = re.compile(r"([=+*/^]|\b(integral|derivative|equation|matrix|probability)\b)", re.IGNORECASE)
+_MATH_MARKERS = re.compile(
+    r"([=+*/^]|\b(integral|derivative|equation|matrix|probability)\b)", re.IGNORECASE
+)
 _MULTISTEP = re.compile(
     r"\b(step[- ]by[- ]step|first.+then|compare.+and|analy[sz]e|prove|derive|plan)\b",
     re.IGNORECASE | re.DOTALL,
@@ -77,9 +79,13 @@ class QueryFeatureExtractor:
     @staticmethod
     def _infer_task(text: str, code_fraction: float, math_fraction: float) -> str:
         lowered = text.lower()
-        if code_fraction >= 0.025 or any(word in lowered for word in ("debug", "compile", "sql", "api")):
+        if code_fraction >= 0.025 or any(
+            word in lowered for word in ("debug", "compile", "sql", "api")
+        ):
             return "code"
-        if math_fraction >= 0.04 or any(word in lowered for word in ("calculate", "theorem", "algebra")):
+        if math_fraction >= 0.04 or any(
+            word in lowered for word in ("calculate", "theorem", "algebra")
+        ):
             return "math"
         if any(word in lowered for word in ("translate", "translation", "翻译")):
             return "translation"

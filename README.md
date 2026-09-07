@@ -100,8 +100,8 @@ change preferences; neither can make an ineligible model selectable.
 - **Decision service**: standard-library `/health`, `/v1/models`, and
   `/v1/route` endpoints with bounded request bodies and concurrency, socket
   timeouts, optional bearer authentication, and structured error semantics.
-- **CLI**: `route`, `simulate`, `feedback`, `report`, `calibrate`, `benchmark`,
-  and `serve`.
+- **CLI**: `route`, `simulate`, `feedback`, `report`, `split-traces`, `calibrate`,
+  `benchmark`, and `serve`.
 
 ## Install
 
@@ -183,6 +183,36 @@ facetroute benchmark \
 The benchmark writes `benchmark.json`, `benchmark.csv`, and a standalone
 `benchmark.html`. The included trace is a fictional format demonstration, not
 a published performance claim.
+
+For an actual experiment, split before inspecting metrics and keep related rows
+together. The command records declared provenance, exact source bytes, the split
+algorithm, requested fractions, and both byte and canonical hashes:
+
+```bash
+facetroute split-traces \
+  --traces /data/router-outcomes.jsonl \
+  --output-dir artifacts/split \
+  --dataset-name "declared evaluation snapshot" \
+  --source-uri "https://example.org/versioned-dataset" \
+  --license "declared-license" \
+  --group-by user_id \
+  --seed 17
+
+facetroute calibrate \
+  --traces artifacts/split/calibration.jsonl \
+  --held-out-traces artifacts/split/test.jsonl \
+  --held-out-group-by user_id \
+  --max-average-cost 0.0025 \
+  --output artifacts/held-out-calibration.json
+```
+
+The selected threshold sees only the calibration partition. FacetRoute rejects
+overlap at the declared request, user, or metadata leakage unit, as well as a
+changed strong/weak model pair, before evaluating the threshold once on the
+held-out partition. The report records that leakage key and both group counts.
+Without `--held-out-traces`, the established calibration report schema remains
+version 1; reports with held-out audit data use schema 2. See the
+[experiment protocol](docs/experiment-protocol.md) for the complete boundary.
 
 ## Python API
 
@@ -501,6 +531,13 @@ Input rejects duplicate JSON keys, `NaN`/infinity, unknown trace/outcome
 fields, duplicate or unstable request IDs, inconsistent pairs, missing
 outcomes, and oversized records. See [the trace schema](docs/trace-schema.md).
 
+`split-traces` can keep a `user_id` or a declared string `metadata:<field>`
+together, preventing that group from appearing in more than one partition.
+The default groups only by request ID and is appropriate only when rows are
+independent. The produced training partition is for fitting the upstream
+route-score model or policy; FacetRoute does not pretend that a supplied
+`route_score` was trained without leakage.
+
 ## Offline benchmark methodology
 
 `benchmark` replays the same ordered traces through rule, Pareto, fresh online
@@ -605,6 +642,7 @@ review appropriate to their context.
 ```bash
 python -m pip install -e ".[dev]"
 ruff check src tests examples
+ruff format --check src tests examples
 mypy -p facetroute
 pytest --cov=facetroute --cov-branch
 python -m build
@@ -614,10 +652,12 @@ The test suite covers validation, deterministic feature extraction, every
 constraint, score normalization, rules, Pareto dominance, batch errors,
 LinUCB learning and persistence, feedback integrity, strict traces,
 calibration, bootstrap benchmarking, reports, HTTP security/error boundaries,
-simulation, configuration, and all seven CLI commands. Tests are offline and
+simulation, configuration, and all eight CLI commands. Tests are offline and
 use temporary directories.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for change and disclosure expectations.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for change and disclosure expectations
+and [the release process](docs/releasing.md) for clean-install, SBOM, checksum,
+and provenance guarantees.
 
 ## Algorithm reference
 

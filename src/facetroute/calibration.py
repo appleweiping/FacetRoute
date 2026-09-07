@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import math
 from dataclasses import dataclass
 from typing import Any
 
 from .errors import ConfigurationError
-from .traces import RouteTrace
+from .splitting import _group_key
+from .traces import RouteTrace, traces_sha256
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,10 +44,16 @@ class CalibrationReport:
     recommended_threshold: float
     selection_reason: str
     dataset_sha256: str
+    held_out: CalibrationPoint | None = None
+    held_out_records: int | None = None
+    held_out_dataset_sha256: str | None = None
+    held_out_group_by: str | None = None
+    calibration_groups: int | None = None
+    held_out_groups: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "schema_version": 1,
+        result: dict[str, Any] = {
+            "schema_version": 2 if self.held_out is not None else 1,
             "records": self.records,
             "strong_model": self.strong_model,
             "weak_model": self.weak_model,
@@ -57,6 +62,18 @@ class CalibrationReport:
             "dataset_sha256": self.dataset_sha256,
             "points": [point.to_dict() for point in self.points],
         }
+        if self.held_out is not None:
+            result["held_out"] = {
+                "records": self.held_out_records,
+                "dataset_sha256": self.held_out_dataset_sha256,
+                "leakage_check": {
+                    "group_by": self.held_out_group_by,
+                    "calibration_groups": self.calibration_groups,
+                    "held_out_groups": self.held_out_groups,
+                },
+                "metrics": self.held_out.to_dict(),
+            }
+        return result
 
 
 def _dominates(left: CalibrationPoint, right: CalibrationPoint) -> bool:
@@ -105,26 +122,29 @@ class ThresholdCalibrator:
         max_average_cost_usd: float | None = None,
         minimum_average_quality: float | None = None,
         dataset_sha256: str | None = None,
+        held_out_traces: tuple[RouteTrace, ...] | None = None,
+        held_out_dataset_sha256: str | None = None,
+        held_out_group_by: str | None = None,
     ) -> CalibrationReport:
         if max_average_cost_usd is not None and (
-                isinstance(max_average_cost_usd, bool)
-                or not isinstance(max_average_cost_usd, (int, float))
-                or not math.isfinite(max_average_cost_usd)
-                or max_average_cost_usd < 0
+            isinstance(max_average_cost_usd, bool)
+            or not isinstance(max_average_cost_usd, (int, float))
+            or not math.isfinite(max_average_cost_usd)
+            or max_average_cost_usd < 0
         ):
-            raise ConfigurationError(
-                "max_average_cost_usd must be finite and non-negative"
-            )
+            raise ConfigurationError("max_average_cost_usd must be finite and non-negative")
         if minimum_average_quality is not None and (
-                isinstance(minimum_average_quality, bool)
-                or not isinstance(minimum_average_quality, (int, float))
-                or not math.isfinite(minimum_average_quality)
-                or not 0 <= minimum_average_quality <= 1
+            isinstance(minimum_average_quality, bool)
+            or not isinstance(minimum_average_quality, (int, float))
+            or not math.isfinite(minimum_average_quality)
+            or not 0 <= minimum_average_quality <= 1
         ):
             raise ConfigurationError("minimum_average_quality must be between 0 and 1")
-        digest = dataset_sha256 or self._trace_digest()
-        if not isinstance(digest, str) or len(digest) != 64 or any(
-            char not in "0123456789abcdef" for char in digest
+        digest = traces_sha256(self.traces) if dataset_sha256 is None else dataset_sha256
+        if (
+            not isinstance(digest, str)
+            or len(digest) != 64
+            or any(char not in "0123456789abcdef" for char in digest)
         ):
             raise ConfigurationError("dataset_sha256 must be a lowercase SHA-256 digest")
         thresholds = sorted(
@@ -187,6 +207,56 @@ class ThresholdCalibrator:
                 ),
             )
             reason = "highest preference-label accuracy, then lowest observed cost"
+        held_out_point: CalibrationPoint | None = None
+        held_out_records: int | None = None
+        held_out_digest: str | None = None
+        audited_group_by: str | None = None
+        calibration_group_count: int | None = None
+        held_out_group_count: int | None = None
+        if held_out_traces is None and (
+            held_out_dataset_sha256 is not None or held_out_group_by is not None
+        ):
+            raise ConfigurationError(
+                "held_out_dataset_sha256 and held_out_group_by require held_out_traces"
+            )
+        if held_out_traces is not None:
+            evaluator = ThresholdCalibrator(held_out_traces)
+            if (evaluator.strong_model, evaluator.weak_model) != (
+                self.strong_model,
+                self.weak_model,
+            ):
+                raise ConfigurationError("held-out traces must use the calibration model pair")
+            audited_group_by = "request_id" if held_out_group_by is None else held_out_group_by
+            if not isinstance(audited_group_by, str):
+                raise ConfigurationError(
+                    "held_out_group_by must be request_id, user_id, or metadata:<field>"
+                )
+            calibration_groups = {_group_key(trace, audited_group_by) for trace in self.traces}
+            held_out_groups = {_group_key(trace, audited_group_by) for trace in held_out_traces}
+            overlap = sorted(calibration_groups & held_out_groups)
+            if overlap:
+                preview = ", ".join(overlap[:3])
+                raise ConfigurationError(
+                    f"calibration and held-out traces overlap by {audited_group_by}: {preview}"
+                )
+            calibration_group_count = len(calibration_groups)
+            held_out_group_count = len(held_out_groups)
+            held_out_digest = (
+                traces_sha256(held_out_traces)
+                if held_out_dataset_sha256 is None
+                else held_out_dataset_sha256
+            )
+            if (
+                not isinstance(held_out_digest, str)
+                or len(held_out_digest) != 64
+                or any(char not in "0123456789abcdef" for char in held_out_digest)
+            ):
+                raise ConfigurationError(
+                    "held_out_dataset_sha256 must be a lowercase SHA-256 digest"
+                )
+            held_out_point = evaluator._point(selected.threshold)
+            held_out_records = len(held_out_traces)
+
         return CalibrationReport(
             records=len(self.traces),
             strong_model=self.strong_model,
@@ -195,21 +265,13 @@ class ThresholdCalibrator:
             recommended_threshold=selected.threshold,
             selection_reason=reason,
             dataset_sha256=digest,
+            held_out=held_out_point,
+            held_out_records=held_out_records,
+            held_out_dataset_sha256=held_out_digest,
+            held_out_group_by=audited_group_by,
+            calibration_groups=calibration_group_count,
+            held_out_groups=held_out_group_count,
         )
-
-    def _trace_digest(self) -> str:
-        digest = hashlib.sha256()
-        for trace in self.traces:
-            digest.update(
-                json.dumps(
-                    trace.to_dict(),
-                    sort_keys=True,
-                    separators=(",", ":"),
-                    ensure_ascii=False,
-                ).encode("utf-8")
-            )
-            digest.update(b"\n")
-        return digest.hexdigest()
 
     def _point(self, threshold: float) -> CalibrationPoint:
         selected: list[tuple[str, RouteTrace]] = []

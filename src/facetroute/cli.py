@@ -28,7 +28,8 @@ from .reporting import (
 from .routers import ParetoRouter, Router, RuleRouter
 from .server import create_server
 from .simulator import OfflineSimulator
-from .traces import file_sha256, load_traces
+from .splitting import split_traces, write_trace_partitions
+from .traces import RouteTrace, _load_traces_with_sha256, file_sha256, load_traces
 from .types import ModelCandidate, RouteRequest, UserPreferences
 
 
@@ -190,10 +191,18 @@ def _run_report(args: argparse.Namespace) -> int:
 
 
 def _run_calibrate(args: argparse.Namespace) -> int:
-    report = ThresholdCalibrator(load_traces(args.traces)).calibrate(
+    calibration, calibration_sha256 = _load_traces_with_sha256(args.traces)
+    held_out: tuple[RouteTrace, ...] | None = None
+    held_out_sha256: str | None = None
+    if args.held_out_traces:
+        held_out, held_out_sha256 = _load_traces_with_sha256(args.held_out_traces)
+    report = ThresholdCalibrator(calibration).calibrate(
         max_average_cost_usd=args.max_average_cost,
         minimum_average_quality=args.minimum_average_quality,
-        dataset_sha256=file_sha256(args.traces),
+        dataset_sha256=calibration_sha256,
+        held_out_traces=held_out,
+        held_out_dataset_sha256=held_out_sha256,
+        held_out_group_by=args.held_out_group_by,
     )
     payload = report.to_dict()
     if args.output:
@@ -201,6 +210,27 @@ def _run_calibrate(args: argparse.Namespace) -> int:
     if args.csv:
         write_calibration_csv(args.csv, report)
     print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
+def _run_split_traces(args: argparse.Namespace) -> int:
+    traces = load_traces(args.traces)
+    partitions = split_traces(
+        traces,
+        seed=args.seed,
+        train_fraction=args.train_fraction,
+        calibration_fraction=args.calibration_fraction,
+        group_by=args.group_by,
+    )
+    manifest = write_trace_partitions(
+        args.output_dir,
+        partitions,
+        source_path=args.traces,
+        dataset_name=args.dataset_name,
+        source_uri=args.source_uri,
+        license_name=args.license,
+    )
+    print(json.dumps(manifest, indent=2, ensure_ascii=False, sort_keys=True))
     return 0
 
 
@@ -387,11 +417,37 @@ def build_parser() -> argparse.ArgumentParser:
         "calibrate", help="calibrate a strong/weak score threshold from strict traces"
     )
     calibrate.add_argument("--traces", required=True, help="strict JSONL route trace")
+    calibrate.add_argument(
+        "--held-out-traces",
+        help="disjoint strict JSONL trace evaluated once at the selected threshold",
+    )
+    calibrate.add_argument(
+        "--held-out-group-by",
+        help="leakage unit: request_id (default), user_id, or metadata:<field>",
+    )
     calibrate.add_argument("--max-average-cost", type=float)
     calibrate.add_argument("--minimum-average-quality", type=float)
     calibrate.add_argument("--output", help="write calibration JSON")
     calibrate.add_argument("--csv", help="write cost-quality curve CSV")
     calibrate.set_defaults(handler=_run_calibrate)
+
+    split = commands.add_parser(
+        "split-traces", help="create deterministic group-disjoint experiment partitions"
+    )
+    split.add_argument("--traces", required=True)
+    split.add_argument("--output-dir", required=True)
+    split.add_argument("--dataset-name", required=True)
+    split.add_argument("--source-uri", required=True)
+    split.add_argument("--license", required=True)
+    split.add_argument("--seed", type=int, default=17)
+    split.add_argument("--train-fraction", type=float, default=0.6)
+    split.add_argument("--calibration-fraction", type=float, default=0.2)
+    split.add_argument(
+        "--group-by",
+        default="request_id",
+        help="request_id, user_id, or metadata:<field>",
+    )
+    split.set_defaults(handler=_run_split_traces)
 
     benchmark = commands.add_parser(
         "benchmark", help="compare routers against observed counterfactual outcomes"

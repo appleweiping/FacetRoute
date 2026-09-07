@@ -34,12 +34,16 @@ def test_rule_router_returns_auditable_decision(three_models: tuple[ModelCandida
     assert len(decision.to_dict()["alternatives"]) == 2
 
 
-def test_rule_router_default_profile_uses_request_user(three_models: tuple[ModelCandidate, ...]) -> None:
+def test_rule_router_default_profile_uses_request_user(
+    three_models: tuple[ModelCandidate, ...],
+) -> None:
     decision = RuleRouter(three_models).route(RouteRequest(query="hello", user_id="new-user"))
     assert decision.user_id == "new-user"
 
 
-def test_rule_router_reports_all_rejection_reasons(make_model: Callable[..., ModelCandidate]) -> None:
+def test_rule_router_reports_all_rejection_reasons(
+    make_model: Callable[..., ModelCandidate],
+) -> None:
     router = RuleRouter((make_model(enabled=False),))
     with pytest.raises(NoEligibleModelError) as captured:
         router.route(RouteRequest(query="hello"))
@@ -67,7 +71,9 @@ def test_route_many_collects_errors_without_reordering(
     router = RuleRouter((make_model(context_window=20),))
     requests = (
         RouteRequest(query="ok", context_tokens=1, expected_output_tokens=1, request_id="ok"),
-        RouteRequest(query="too long", context_tokens=30, expected_output_tokens=1, request_id="bad"),
+        RouteRequest(
+            query="too long", context_tokens=30, expected_output_tokens=1, request_id="bad"
+        ),
         RouteRequest(query="fine", context_tokens=2, expected_output_tokens=1, request_id="fine"),
     )
     result = router.route_many(requests, fail_fast=False)
@@ -183,7 +189,9 @@ def test_linucb_router_rejects_incompatible_state_dimension(
         LinUCBRouter(three_models, policy=policy)
 
 
-def test_linucb_router_feedback_updates_selected_arm(three_models: tuple[ModelCandidate, ...]) -> None:
+def test_linucb_router_feedback_updates_selected_arm(
+    three_models: tuple[ModelCandidate, ...],
+) -> None:
     router = LinUCBRouter(three_models)
     decision = router.route(RouteRequest(query="hello", user_id="u", request_id="r"))
     event = FeedbackEvent(
@@ -198,11 +206,11 @@ def test_linucb_router_feedback_updates_selected_arm(three_models: tuple[ModelCa
     assert router.policy.arms[decision.selected_model].updates == 1
 
 
-def test_linucb_router_rejects_other_policy_feedback(three_models: tuple[ModelCandidate, ...]) -> None:
+def test_linucb_router_rejects_other_policy_feedback(
+    three_models: tuple[ModelCandidate, ...],
+) -> None:
     router = LinUCBRouter(three_models)
-    event = FeedbackEvent(
-        request_id="r", user_id="u", model_id="cheap", reward=0.5, policy="rule"
-    )
+    event = FeedbackEvent(request_id="r", user_id="u", model_id="cheap", reward=0.5, policy="rule")
     with pytest.raises(ConfigurationError, match="does not match"):
         router.update_feedback(event)
 

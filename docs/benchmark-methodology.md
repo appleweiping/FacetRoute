@@ -26,6 +26,12 @@ These intervals quantify resampling variation inside the supplied trace. They
 do not account for biased judges, missing counterfactuals, correlated users,
 temporal drift, or repeated tuning on the same holdout.
 
+Use `split-traces` before examining results. Tune an upstream score model only
+on `train`, choose a threshold only on `calibration`, and report the untouched
+`test` result. If rows from one user, task family, model pair, or source can be
+correlated, select that stable key with `--group-by` rather than accepting the
+request-level default.
+
 ## Reproducibility manifest
 
 Every CLI report records the ordered trace byte SHA-256, canonical catalog

@@ -74,9 +74,7 @@ class RuleRouter:
     def route(self, request: RouteRequest) -> RouteDecision:
         preferences = self.preference_for(request.user_id)
         features = self.extractor.extract(request)
-        constraint_result = self.constraints.filter(
-            self.candidates, request, features, preferences
-        )
+        constraint_result = self.constraints.filter(self.candidates, request, features, preferences)
         if not constraint_result.eligible:
             raise NoEligibleModelError(constraint_result.rejected)
         pool = self._candidate_pool(
@@ -135,7 +133,9 @@ class RuleRouter:
             context_vector=context_vector,
         )
 
-    def route_many(self, requests: Iterable[RouteRequest], *, fail_fast: bool = True) -> BatchRouteResult:
+    def route_many(
+        self, requests: Iterable[RouteRequest], *, fail_fast: bool = True
+    ) -> BatchRouteResult:
         decisions: list[RouteDecision] = []
         errors: dict[int, str] = {}
         for index, request in enumerate(requests):
@@ -201,7 +201,9 @@ class BatchRouter:
     def __init__(self, router: Router) -> None:
         self.router = router
 
-    def route(self, requests: Iterable[RouteRequest], *, fail_fast: bool = True) -> BatchRouteResult:
+    def route(
+        self, requests: Iterable[RouteRequest], *, fail_fast: bool = True
+    ) -> BatchRouteResult:
         decisions: list[RouteDecision] = []
         errors: dict[int, str] = {}
         for index, request in enumerate(requests):

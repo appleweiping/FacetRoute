@@ -97,7 +97,9 @@ class FeedbackEvent:
                 policy=str(data["policy"]),
                 context_vector=tuple(float(item) for item in data.get("context_vector", [])),
                 success=success,
-                latency_ms=(float(data["latency_ms"]) if data.get("latency_ms") is not None else None),
+                latency_ms=(
+                    float(data["latency_ms"]) if data.get("latency_ms") is not None else None
+                ),
                 cost_usd=(float(data["cost_usd"]) if data.get("cost_usd") is not None else None),
                 tags={str(key): str(value) for key, value in dict(data.get("tags", {})).items()},
                 event_id=str(data.get("event_id", uuid4().hex)),

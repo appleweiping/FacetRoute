@@ -56,9 +56,7 @@ class RoutingRule:
             self,
             "tasks",
             frozenset(
-                item.strip().lower()
-                for item in _string_items(self.tasks, "tasks")
-                if item.strip()
+                item.strip().lower() for item in _string_items(self.tasks, "tasks") if item.strip()
             ),
         )
         object.__setattr__(
@@ -66,9 +64,7 @@ class RoutingRule:
             "required_capabilities",
             frozenset(
                 item.strip().lower()
-                for item in _string_items(
-                    self.required_capabilities, "required_capabilities"
-                )
+                for item in _string_items(self.required_capabilities, "required_capabilities")
                 if item.strip()
             ),
         )
@@ -88,9 +84,7 @@ class RoutingRule:
                 prefer_models=_string_items(data["prefer_models"], "prefer_models"),
                 tasks=frozenset(_string_items(data.get("tasks", []), "tasks")),
                 required_capabilities=frozenset(
-                    _string_items(
-                        data.get("required_capabilities", []), "required_capabilities"
-                    )
+                    _string_items(data.get("required_capabilities", []), "required_capabilities")
                 ),
                 minimum_difficulty=float(data.get("minimum_difficulty", 0.0)),
                 maximum_difficulty=float(data.get("maximum_difficulty", 1.0)),

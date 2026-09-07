@@ -19,17 +19,23 @@ def test_model_rejects_empty_identifier(make_model: Callable[..., ModelCandidate
         make_model(" ")
 
 
-def test_model_rejects_quality_outside_unit_interval(make_model: Callable[..., ModelCandidate]) -> None:
+def test_model_rejects_quality_outside_unit_interval(
+    make_model: Callable[..., ModelCandidate],
+) -> None:
     with pytest.raises(ConfigurationError, match="between 0 and 1"):
         make_model(quality_by_task={"default": 1.1})
 
 
-def test_model_rejects_inverted_latency_percentiles(make_model: Callable[..., ModelCandidate]) -> None:
+def test_model_rejects_inverted_latency_percentiles(
+    make_model: Callable[..., ModelCandidate],
+) -> None:
     with pytest.raises(ConfigurationError, match="p95"):
         make_model(latency_ms_p50=300, latency_ms_p95=200)
 
 
-def test_cost_estimate_uses_separate_input_output_prices(make_model: Callable[..., ModelCandidate]) -> None:
+def test_cost_estimate_uses_separate_input_output_prices(
+    make_model: Callable[..., ModelCandidate],
+) -> None:
     model = make_model(input_cost_per_million=2, output_cost_per_million=5)
     assert model.estimate_cost(1_000, 200) == pytest.approx(0.003)
 

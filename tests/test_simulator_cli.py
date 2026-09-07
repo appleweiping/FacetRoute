@@ -123,9 +123,7 @@ def test_simulation_reports_constraint_failure(three_models):
         "Use an unavailable image model",
         required_capabilities=frozenset({"vision"}),
     )
-    observations, report = OfflineSimulator(
-        RuleRouter(three_models), three_models
-    ).run([request])
+    observations, report = OfflineSimulator(RuleRouter(three_models), three_models).run([request])
 
     assert observations == ()
     assert report.failed_requests == 1
@@ -318,21 +316,15 @@ def test_simulator_uses_declared_candidate_cost():
     )
     request = RouteRequest("hello", expected_output_tokens=10, context_tokens=10)
 
-    observations, report = OfflineSimulator(RuleRouter([model]), [model], seed=3).run(
-        [request]
-    )
+    observations, report = OfflineSimulator(RuleRouter([model]), [model], seed=3).run([request])
 
     assert len(observations) == 1
     assert report.average_cost_usd == pytest.approx(0.00006)
 
 
 def test_simulator_oracle_excludes_models_rejected_by_hard_constraints(make_model):
-    local = make_model(
-        "local", quality_by_task={"default": 0.4}, metadata={"local": True}
-    )
-    remote = make_model(
-        "remote", quality_by_task={"default": 0.9}, metadata={"local": False}
-    )
+    local = make_model("local", quality_by_task={"default": 0.4}, metadata={"local": True})
+    remote = make_model("remote", quality_by_task={"default": 0.9}, metadata={"local": False})
     observations, report = OfflineSimulator(
         RuleRouter((local, remote)), (local, remote), seed=3
     ).run([RouteRequest("private", sensitivity="restricted")])

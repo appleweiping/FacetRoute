@@ -91,9 +91,7 @@ def test_feedback_log_rejects_duplicate_ids_already_on_disk(tmp_path) -> None:
 def test_feedback_summary_aggregates_by_model(tmp_path) -> None:
     log = FeedbackLog(tmp_path / "feedback.jsonl")
     log.append(_event(latency_ms=100, cost_usd=0.1))
-    log.append(
-        _event(event_id="event-2", reward=0.4, success=False, latency_ms=300, cost_usd=0.2)
-    )
+    log.append(_event(event_id="event-2", reward=0.4, success=False, latency_ms=300, cost_usd=0.2))
     summary = log.summarize()["m"]
     assert summary.count == 2
     assert summary.average_reward == pytest.approx(0.6)
@@ -138,14 +136,14 @@ def test_preference_store_upsert_and_round_trip(tmp_path) -> None:
 
 def test_preference_store_wraps_invalid_profile_data(tmp_path) -> None:
     path = tmp_path / "profiles.json"
-    path.write_text(
-        json.dumps({"schema_version": 1, "profiles": "not-a-list"}), encoding="utf-8"
-    )
+    path.write_text(json.dumps({"schema_version": 1, "profiles": "not-a-list"}), encoding="utf-8")
     with pytest.raises(PersistenceError, match="profiles must be a list"):
         PreferenceStore(path).load_all()
 
 
-def test_load_models_rejects_duplicates(tmp_path, make_model: Callable[..., ModelCandidate]) -> None:
+def test_load_models_rejects_duplicates(
+    tmp_path, make_model: Callable[..., ModelCandidate]
+) -> None:
     path = tmp_path / "models.json"
     model = make_model("same").to_dict()
     path.write_text(json.dumps([model, model]), encoding="utf-8")

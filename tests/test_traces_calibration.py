@@ -6,7 +6,14 @@ import pytest
 
 from facetroute.calibration import ThresholdCalibrator
 from facetroute.errors import ConfigurationError
-from facetroute.traces import RouteTrace, TraceOutcome, file_sha256, load_traces
+from facetroute.traces import (
+    RouteTrace,
+    TraceOutcome,
+    file_sha256,
+    load_traces,
+    traces_sha256,
+    write_traces,
+)
 from facetroute.types import RouteRequest
 
 
@@ -17,9 +24,16 @@ def _trace(
     preferred: str = "strong",
     strong_quality: float = 0.9,
     weak_quality: float = 0.6,
+    user_id: str = "default",
+    metadata: dict[str, object] | None = None,
 ) -> RouteTrace:
     return RouteTrace(
-        request=RouteRequest("local evaluation text", request_id=request_id),
+        request=RouteRequest(
+            "local evaluation text",
+            request_id=request_id,
+            user_id=user_id,
+            metadata={} if metadata is None else metadata,
+        ),
         outcomes={
             "strong": TraceOutcome(strong_quality, 0.02, 400, True),
             "weak": TraceOutcome(weak_quality, 0.002, 80, weak_quality > 0.5),
@@ -183,7 +197,129 @@ def test_calibrator_builds_cost_quality_pareto_curve_and_recommendation():
         point for point in report.points if point.threshold == report.recommended_threshold
     )
     assert chosen.average_cost_usd <= 0.014
-    assert report.to_dict()["schema_version"] == 1
+    payload = report.to_dict()
+    assert payload["schema_version"] == 1
+    assert "held_out" not in payload
+
+
+def test_calibrator_evaluates_selected_threshold_once_on_disjoint_holdout():
+    calibration = (
+        _trace("cal-a", 0.9, preferred="strong", user_id="cal-user-a"),
+        _trace("cal-b", 0.2, preferred="weak", user_id="cal-user-b"),
+    )
+    held_out = (
+        _trace(
+            "test-a",
+            0.8,
+            preferred="strong",
+            strong_quality=0.95,
+            user_id="test-user-a",
+        ),
+        _trace(
+            "test-b",
+            0.1,
+            preferred="weak",
+            strong_quality=0.7,
+            user_id="test-user-b",
+        ),
+    )
+
+    report = ThresholdCalibrator(calibration).calibrate(
+        held_out_traces=held_out, held_out_group_by="user_id"
+    )
+
+    assert report.held_out is not None
+    assert report.held_out.threshold == report.recommended_threshold
+    assert report.held_out_records == 2
+    assert report.held_out_dataset_sha256 == traces_sha256(held_out)
+    assert report.to_dict()["schema_version"] == 2
+    assert report.to_dict()["held_out"] == {
+        "records": 2,
+        "dataset_sha256": traces_sha256(held_out),
+        "leakage_check": {
+            "group_by": "user_id",
+            "calibration_groups": 2,
+            "held_out_groups": 2,
+        },
+        "metrics": report.held_out.to_dict(),
+    }
+
+
+def test_calibration_without_holdout_retains_v1_wire_schema() -> None:
+    report = ThresholdCalibrator((_trace("legacy", 0.8),)).calibrate()
+
+    payload = report.to_dict()
+
+    assert payload["schema_version"] == 1
+    assert set(payload) == {
+        "schema_version",
+        "records",
+        "strong_model",
+        "weak_model",
+        "recommended_threshold",
+        "selection_reason",
+        "dataset_sha256",
+        "points",
+    }
+
+
+def test_calibrator_refuses_holdout_leakage_pair_drift_and_bad_digest():
+    calibration = (_trace("same", 0.9),)
+    with pytest.raises(ConfigurationError, match="overlap"):
+        ThresholdCalibrator(calibration).calibrate(held_out_traces=calibration)
+
+    different_pair = RouteTrace(
+        RouteRequest("x", request_id="held-out"),
+        {
+            "large": TraceOutcome(0.9, 1, 1, True),
+            "small": TraceOutcome(0.5, 0, 1, True),
+        },
+        preferred_model="large",
+        route_score=0.5,
+        strong_model="large",
+        weak_model="small",
+    )
+    with pytest.raises(ConfigurationError, match="model pair"):
+        ThresholdCalibrator(calibration).calibrate(held_out_traces=(different_pair,))
+    with pytest.raises(ConfigurationError, match="held_out_dataset_sha256"):
+        ThresholdCalibrator(calibration).calibrate(
+            held_out_traces=(_trace("held-out", 0.1),), held_out_dataset_sha256="bad"
+        )
+    with pytest.raises(ConfigurationError, match="require held_out_traces"):
+        ThresholdCalibrator(calibration).calibrate(held_out_group_by="user_id")
+
+
+def test_calibrator_can_reject_user_or_metadata_group_leakage() -> None:
+    calibration = (_trace("cal", 0.9, user_id="shared", metadata={"domain": "shared-domain"}),)
+    held_out_same_user = (
+        _trace("test", 0.1, user_id="shared", metadata={"domain": "other-domain"}),
+    )
+    with pytest.raises(ConfigurationError, match="overlap by user_id"):
+        ThresholdCalibrator(calibration).calibrate(
+            held_out_traces=held_out_same_user,
+            held_out_group_by="user_id",
+        )
+
+    held_out_same_domain = (
+        _trace("test", 0.1, user_id="other", metadata={"domain": "shared-domain"}),
+    )
+    with pytest.raises(ConfigurationError, match="overlap by metadata:domain"):
+        ThresholdCalibrator(calibration).calibrate(
+            held_out_traces=held_out_same_domain,
+            held_out_group_by="metadata:domain",
+        )
+
+
+def test_trace_canonical_writer_round_trips_and_fingerprints(tmp_path):
+    path = tmp_path / "canonical.jsonl"
+    traces = (_trace("a", 0.8), _trace("b", 0.2))
+    write_traces(path, traces)
+    assert load_traces(path) == traces
+    assert traces_sha256(traces) == file_sha256(path)
+    with pytest.raises(ConfigurationError, match="empty"):
+        write_traces(path, ())
+    with pytest.raises(ConfigurationError, match="empty"):
+        traces_sha256(())
 
 
 def test_calibrator_can_optimize_label_accuracy_or_quality_floor():

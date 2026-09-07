@@ -107,19 +107,24 @@ class OfflineSimulator:
         features = self.extractor.extract(request)
         selected_quality = candidate.quality_for(features.task)
         eligible_candidates = (
-            item
-            for item in self.candidates.values()
-            if item.model_id not in decision.excluded
+            item for item in self.candidates.values() if item.model_id not in decision.excluded
         )
         oracle_quality = max(item.quality_for(features.task) for item in eligible_candidates)
         difficulty_penalty = 0.18 * features.difficulty
-        preference_bonus = 0.03 if candidate.model_id in getattr(
-            getattr(self.router, "preference_for", lambda _user: None)(request.user_id),
-            "preferred_models",
-            (),
-        ) else 0.0
+        preference_bonus = (
+            0.03
+            if candidate.model_id
+            in getattr(
+                getattr(self.router, "preference_for", lambda _user: None)(request.user_id),
+                "preferred_models",
+                (),
+            )
+            else 0.0
+        )
         noise = self.random.uniform(-0.025, 0.025)
-        reward = min(1.0, max(0.0, selected_quality - difficulty_penalty + preference_bonus + noise))
+        reward = min(
+            1.0, max(0.0, selected_quality - difficulty_penalty + preference_bonus + noise)
+        )
         latency = self.random.uniform(candidate.latency_ms_p50, candidate.latency_ms_p95)
         success = self.random.random() < reward
         feedback = FeedbackEvent(
@@ -157,7 +162,9 @@ class OfflineSimulator:
         )
         selections: dict[str, int] = {}
         for item in observations:
-            selections[item.decision.selected_model] = selections.get(item.decision.selected_model, 0) + 1
+            selections[item.decision.selected_model] = (
+                selections.get(item.decision.selected_model, 0) + 1
+            )
         p95: float | None = None
         if latencies:
             index = min(len(latencies) - 1, max(0, math.ceil(0.95 * len(latencies)) - 1))

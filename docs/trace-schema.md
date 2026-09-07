@@ -29,7 +29,27 @@ finite. Unknown fields are rejected instead of silently ignored.
 - Every row in one calibration run uses the same ordered pair.
 - CLI reports hash exact file bytes. Library reports hash canonical parsed
   traces when no external digest is supplied.
+- Calibration and held-out files must have disjoint values for the declared
+  `held_out_group_by` leakage key and the same ordered strong/weak model pair.
+  The default leakage key is `request_id`; use `user_id` or
+  `metadata:<field>` when requests share a person or task family.
 
 Trace files may contain evaluation text. Keep private prompts and personal
 data out of public fixtures; the evaluation operator owns access-control and
 retention decisions.
+
+## Canonical partition files
+
+`split-traces` writes canonical UTF-8 JSONL with sorted object keys. Its
+`manifest.json` records SHA-256 of the exact bytes parsed from the input and,
+for each partition, the byte SHA-256, canonical parsed SHA-256, record count,
+and filename. It also records the canonical source hash, requested and actual
+fractions, absolute fraction error, and per-partition group counts. The writer
+rejects an input path that aliases any output and refuses partitions that do
+not exactly match the source and declared deterministic algorithm. The split
+is deterministic for the same records, group keys, fractions, and seed. It
+preserves source row order inside each partition.
+
+Grouping by `user_id` or `metadata:<field>` requires a non-empty value on every
+row. At least three distinct groups are required so train, calibration, and
+test cannot be empty.

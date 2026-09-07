@@ -28,25 +28,36 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           cache: pip
-      - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e ".[dev]"
-      - run: python -m compileall -q src
-      - run: pytest --cov=facetroute --cov-branch
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.11.31"
+          enable-cache: true
+      - run: uv sync --locked --extra dev
+      - run: uv run --locked python -m compileall -q src
+      - run: uv run --locked pytest --cov=facetroute --cov-branch
       - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
-        run: ruff check src tests examples
+        run: uv run --locked ruff check src tests examples
       - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
-        run: mypy -p facetroute
+        run: uv run --locked ruff format --check src tests examples
       - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
-        run: bandit -q -c pyproject.toml -r src
+        run: uv run --locked mypy -p facetroute
+      - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
+        run: uv run --locked bandit -q -c pyproject.toml -r src
+      - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
+        run: uv audit --locked
       - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
         run: |
-          facetroute calibrate --traces examples/traces.jsonl --max-average-cost 0.003 --output /tmp/calibration.json --csv /tmp/calibration.csv
-          facetroute benchmark --models examples/models.json --preferences examples/preferences.json --rules examples/rules.json --traces examples/traces.jsonl --bootstrap-samples 100 --output-dir /tmp/benchmark
+          uv run --locked facetroute calibrate --traces examples/traces.jsonl --max-average-cost 0.003 --output /tmp/calibration.json --csv /tmp/calibration.csv
+          uv run --locked facetroute split-traces --traces examples/traces.jsonl --output-dir /tmp/split --dataset-name "synthetic fixture" --source-uri "repository:examples/traces.jsonl" --license MIT
+          uv run --locked facetroute calibrate --traces /tmp/split/calibration.jsonl --held-out-traces /tmp/split/test.jsonl --max-average-cost 0.003 --output /tmp/held-out.json
+          uv run --locked facetroute benchmark --models examples/models.json --preferences examples/preferences.json --rules examples/rules.json --traces examples/traces.jsonl --bootstrap-samples 100 --output-dir /tmp/benchmark
           test -s /tmp/benchmark/benchmark.html
       - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
-        run: python -m build
+        run: uv run --locked python -m build --no-isolation
       - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
+        shell: bash
         run: |
-          python -m pip install --force-reinstall --no-deps dist/*.whl
-          python -c "import facetroute; print(facetroute.__version__)"
-          facetroute --help
+          python -m venv .ci-wheel-check
+          .ci-wheel-check/bin/python -m pip install --disable-pip-version-check --no-deps dist/*.whl
+          .ci-wheel-check/bin/python -c "import facetroute; print(facetroute.__version__)"
+          .ci-wheel-check/bin/facetroute --help

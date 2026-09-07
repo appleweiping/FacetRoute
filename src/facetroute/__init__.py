@@ -32,7 +32,16 @@ from .rules import RoutingRule
 from .scoring import MultiObjectiveScorer
 from .server import FacetRouteHTTPServer, create_server, route_request_from_http
 from .simulator import EvaluationReport, OfflineSimulator, SimulationObservation
-from .traces import RouteTrace, TraceOutcome, file_sha256, iter_traces, load_traces
+from .splitting import TracePartitions, split_traces, write_trace_partitions
+from .traces import (
+    RouteTrace,
+    TraceOutcome,
+    file_sha256,
+    iter_traces,
+    load_traces,
+    traces_sha256,
+    write_traces,
+)
 from .types import (
     ModelCandidate,
     QueryFeatures,
@@ -45,7 +54,7 @@ from .types import (
 try:
     __version__ = version("facetroute")
 except PackageNotFoundError:  # pragma: no cover - source tree without installation
-    __version__ = "0.2.0"
+    __version__ = "0.3.0"
 
 __all__ = [
     "CONTEXT_DIMENSION",
@@ -88,6 +97,7 @@ __all__ = [
     "SimulationObservation",
     "ThresholdCalibrator",
     "TraceOutcome",
+    "TracePartitions",
     "UserPreferences",
     "benchmark_rows",
     "create_server",
@@ -97,8 +107,12 @@ __all__ = [
     "load_traces",
     "pareto_front",
     "route_request_from_http",
+    "split_traces",
+    "traces_sha256",
     "write_benchmark_csv",
     "write_benchmark_html",
     "write_calibration_csv",
     "write_json",
+    "write_trace_partitions",
+    "write_traces",
 ]
