@@ -15,6 +15,7 @@ from . import __version__
 from ._json import loads_strict
 from .bandit import LinUCBPolicy, LinUCBRouter, ThompsonPolicy, ThompsonRouter
 from .benchmark import BenchmarkRunner, PolicySpec
+from .benchmark_formats import BenchmarkFormat, load_benchmark_examples, write_benchmark_examples
 from .calibration import ThresholdCalibrator
 from .config import load_models, load_preferences, load_requests, load_rules, request_from_dict
 from .errors import FacetRouteError
@@ -187,6 +188,14 @@ def _run_report(args: argparse.Namespace) -> int:
         "total_events": sum(item.count for item in summary.values()),
     }
     print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
+def _run_normalize_benchmark(args: argparse.Namespace) -> int:
+    examples = load_benchmark_examples(args.input, format=args.format)
+    write_benchmark_examples(args.output, examples)
+    formats = {example.format.value for example in examples}
+    print(f"normalized {len(examples)} {next(iter(formats))} examples to {args.output}")
     return 0
 
 
@@ -412,6 +421,19 @@ def build_parser() -> argparse.ArgumentParser:
     report = commands.add_parser("report", help="summarize a feedback JSONL log")
     report.add_argument("--log", required=True)
     report.set_defaults(handler=_run_report)
+
+    normalize = commands.add_parser(
+        "normalize-benchmark",
+        help="validate and canonicalize MMLU, GSM8K, or MT-Bench JSON/JSONL",
+    )
+    normalize.add_argument("--input", required=True, help="benchmark JSON or JSONL")
+    normalize.add_argument("--output", required=True, help="canonical JSONL output")
+    normalize.add_argument(
+        "--format",
+        choices=("auto", *(item.value for item in BenchmarkFormat)),
+        default="auto",
+    )
+    normalize.set_defaults(handler=_run_normalize_benchmark)
 
     calibrate = commands.add_parser(
         "calibrate", help="calibrate a strong/weak score threshold from strict traces"

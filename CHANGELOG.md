@@ -6,6 +6,13 @@ Notable changes are recorded here. Versions follow semantic versioning.
 
 _No changes yet._
 
+## [0.4.0] - 2026-09-07
+
+### Added
+
+- Public benchmark format normalization for MMLU, GSM8K, and MT-Bench with
+  stable `format:example-id` request keys and answer-leakage protection.
+
 ## [0.3.2] - 2026-09-07
 
 ### Fixed

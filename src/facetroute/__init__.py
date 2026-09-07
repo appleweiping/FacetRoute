@@ -13,6 +13,12 @@ from .benchmark import (
     IntervalEstimate,
     PolicySpec,
 )
+from .benchmark_formats import (
+    BenchmarkExample,
+    BenchmarkFormat,
+    load_benchmark_examples,
+    write_benchmark_examples,
+)
 from .calibration import CalibrationPoint, CalibrationReport, ThresholdCalibrator
 from .constraints import ConstraintEngine, ConstraintResult
 from .errors import ConfigurationError, FacetRouteError, NoEligibleModelError, PersistenceError
@@ -54,12 +60,14 @@ from .types import (
 try:
     __version__ = version("facetroute")
 except PackageNotFoundError:  # pragma: no cover - source tree without installation
-    __version__ = "0.3.2"
+    __version__ = "0.4.0"
 
 __all__ = [
     "CONTEXT_DIMENSION",
     "BatchRouteResult",
     "BatchRouter",
+    "BenchmarkExample",
+    "BenchmarkFormat",
     "BenchmarkManifest",
     "BenchmarkMetrics",
     "BenchmarkReport",
@@ -104,12 +112,14 @@ __all__ = [
     "dominates",
     "file_sha256",
     "iter_traces",
+    "load_benchmark_examples",
     "load_traces",
     "pareto_front",
     "route_request_from_http",
     "split_traces",
     "traces_sha256",
     "write_benchmark_csv",
+    "write_benchmark_examples",
     "write_benchmark_html",
     "write_calibration_csv",
     "write_json",

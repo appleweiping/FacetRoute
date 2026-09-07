@@ -95,13 +95,16 @@ change preferences; neither can make an ineligible model selectable.
   cost-quality Pareto curves, fixed-model baselines, rule/Pareto/LinUCB
   comparisons, quality regret, constraint violations, and seeded bootstrap
   confidence intervals.
+- **Benchmark format adapters**: strict, offline normalization for the public
+  MMLU, GSM8K, and MT-Bench JSON/JSONL record shapes. Answers remain separate
+  from the routing prompt, and every normalized request receives a stable ID.
 - **Portable reports**: deterministic JSON, analysis-ready CSV, and a
   standalone HTML table with an embedded reproducibility manifest.
 - **Decision service**: standard-library `/health`, `/v1/models`, and
   `/v1/route` endpoints with bounded request bodies and concurrency, socket
   timeouts, optional bearer authentication, and structured error semantics.
 - **CLI**: `route`, `simulate`, `feedback`, `report`, `split-traces`, `calibrate`,
-  `benchmark`, and `serve`.
+  `benchmark`, `normalize-benchmark`, and `serve`.
 
 ## Install
 
@@ -183,6 +186,24 @@ facetroute benchmark \
 The benchmark writes `benchmark.json`, `benchmark.csv`, and a standalone
 `benchmark.html`. The included trace is a fictional format demonstration, not
 a published performance claim.
+
+Normalize a public benchmark export before constructing counterfactual traces:
+
+```bash
+facetroute normalize-benchmark \
+  --input mmlu_test.json \
+  --format mmlu \
+  --output artifacts/mmlu.jsonl
+```
+
+The adapter accepts MMLU (`question`, `choices`, `answer`), GSM8K
+(`question`, `answer`), and MT-Bench (`question_id`, `turns`, optional
+`category`) records as JSON arrays, objects, or JSONL. It validates IDs,
+choices, answers, duplicate records, file size, and record count. The output is
+canonical JSONL with a reproducible `format:id` request key. The answer is kept
+in the normalized record for an evaluator, but is never concatenated into the
+request query; model scoring and quality outcomes must still be supplied by a
+separate, explicitly hashed trace.
 
 For an actual experiment, split before inspecting metrics and keep related rows
 together. The command records declared provenance, exact source bytes, the split

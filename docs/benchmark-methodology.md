@@ -1,5 +1,17 @@
 # Offline benchmark methodology
 
+## Public benchmark format normalization
+
+`facetroute normalize-benchmark` is a schema adapter, not a model evaluator. It
+accepts the record shapes used by MMLU (`question`, `choices`, `answer`), GSM8K
+(`question`, `answer`), and MT-Bench (`question_id`, `turns`, optional
+`category`) in JSON or JSONL form. It rejects duplicate IDs, malformed choices,
+missing answers, mixed formats, oversized files, and excessive record counts.
+The canonical JSONL output keeps the reference answer outside the generated
+`RouteRequest.query`, so a later evaluator can score a provider response without
+answer leakage. The resulting request ID is stable (`format:example-id`) and
+can be joined to a separately hashed counterfactual trace.
+
 FacetRoute performs counterfactual replay: a policy selects a model for each
 request, and the runner retrieves that model's outcome from the same trace
 row. It never estimates a missing outcome or calls a provider.
