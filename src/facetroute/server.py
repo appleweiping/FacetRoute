@@ -334,7 +334,11 @@ class FacetRouteHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Cache-Control", "no-store")
-        self.send_header("X-Request-ID", request_id)
+        # Keep this final sink-side guard even though ``_request_id`` rejects
+        # control characters. It protects future internal callers and makes
+        # the response-splitting invariant explicit at the HTTP boundary.
+        safe_request_id = request_id.replace("\n", "").replace("\r", "")
+        self.send_header("X-Request-ID", safe_request_id)
         if self.close_connection:
             self.send_header("Connection", "close")
         for key, value in (extra_headers or {}).items():

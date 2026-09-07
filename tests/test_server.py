@@ -6,12 +6,14 @@ import socket
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
+from http import HTTPStatus
+from io import BytesIO
 
 import pytest
 
 from facetroute.errors import ConfigurationError
 from facetroute.routers import RuleRouter
-from facetroute.server import create_server, route_request_from_http
+from facetroute.server import FacetRouteHandler, create_server, route_request_from_http
 from facetroute.types import ModelCandidate, RouteRequest
 
 # These talk to a local server running in a background thread, so the timeout
@@ -132,6 +134,27 @@ def test_bearer_authentication_and_request_id_sanitization(three_models):
     assert headers["www-authenticate"] == "Bearer"
     assert authorized == 200
     assert safe_headers["x-request-id"] != "bad\tidentifier"
+
+
+def test_response_boundary_strips_request_id_line_breaks():
+    handler = object.__new__(FacetRouteHandler)
+    emitted_headers: list[tuple[str, str]] = []
+    handler.close_connection = False
+    handler.wfile = BytesIO()
+    handler.send_response = lambda _status: None  # type: ignore[method-assign]
+    handler.send_header = (  # type: ignore[method-assign]
+        lambda name, value: emitted_headers.append((name, value))
+    )
+    handler.end_headers = lambda: None  # type: ignore[method-assign]
+
+    handler._json_response(
+        HTTPStatus.OK,
+        {"status": "ok"},
+        "trusted\r\nX-Injected: yes\n",
+    )
+
+    assert ("X-Request-ID", "trustedX-Injected: yes") in emitted_headers
+    assert all("\r" not in value and "\n" not in value for _, value in emitted_headers)
 
 
 @pytest.mark.parametrize(

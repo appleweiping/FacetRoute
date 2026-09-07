@@ -54,7 +54,7 @@ from .types import (
 try:
     __version__ = version("facetroute")
 except PackageNotFoundError:  # pragma: no cover - source tree without installation
-    __version__ = "0.3.0"
+    __version__ = "0.3.1"
 
 __all__ = [
     "CONTEXT_DIMENSION",

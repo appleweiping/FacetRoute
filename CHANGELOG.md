@@ -6,6 +6,15 @@ Notable changes are recorded here. Versions follow semantic versioning.
 
 _No changes yet._
 
+## [0.3.1] - 2026-09-07
+
+### Security
+
+- Added a final CR/LF-removal guard at the HTTP response boundary for
+  `X-Request-ID`. The request parser already rejected control characters; the
+  sink-side guard also protects future internal callers and makes the
+  response-splitting invariant explicit to static analysis.
+
 ## [0.3.0] - 2026-09-07
 
 ### Added
