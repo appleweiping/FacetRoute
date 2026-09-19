@@ -54,9 +54,12 @@ _FAILURE_MESSAGES = {
 class ProviderError(FacetRouteError):
     """A redacted provider error safe to return to a caller."""
 
-    def __init__(self, failure: ProviderFailure) -> None:
+    def __init__(self, failure: ProviderFailure, *, retry_safe: bool = False) -> None:
         super().__init__(_FAILURE_MESSAGES[failure])
         self.failure = failure
+        # Only a transport that can prove the request was never sent may set
+        # this. A timeout after send may already have produced billable output.
+        self.retry_safe = retry_safe
 
 
 class ChatCompletionProvider(Protocol):
@@ -110,6 +113,10 @@ class ProviderRegistry:
     def __init__(self, targets: tuple[ProviderTarget, ...]) -> None:
         if not targets:
             raise ConfigurationError("provider registry cannot be empty")
+        if len(targets) > _MAX_PROVIDER_BINDINGS:
+            raise ConfigurationError(
+                f"provider registry cannot exceed {_MAX_PROVIDER_BINDINGS} model bindings"
+            )
         by_model = {target.model_id: target for target in targets}
         if len(by_model) != len(targets):
             raise ConfigurationError("provider registry contains duplicate model_id values")
@@ -406,6 +413,16 @@ class OpenAICompatibleProvider:
         if self._api_key is not None:
             headers["Authorization"] = f"Bearer {self._api_key}"
         endpoint = f"{self._url.path.rstrip('/')}/chat/completions"
+        try:
+            # Establish DNS/TCP/TLS before handing over request bytes. Only
+            # failures in this phase can be retried without duplicate work.
+            connection.connect()
+        except TimeoutError as exc:
+            connection.close()
+            raise ProviderError(ProviderFailure.TIMEOUT, retry_safe=True) from exc
+        except (OSError, http.client.HTTPException) as exc:
+            connection.close()
+            raise ProviderError(ProviderFailure.UNAVAILABLE, retry_safe=True) from exc
         try:
             connection.request("POST", endpoint, body=body, headers=headers)
             response = connection.getresponse()

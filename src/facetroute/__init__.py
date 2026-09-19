@@ -4,6 +4,14 @@ from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError, version
 
+from .async_client import (
+    AsyncChatCompletionProvider,
+    AsyncProviderRegistry,
+    AsyncProviderTarget,
+    AsyncRoutingController,
+    RoutedCompletion,
+    RoutedStream,
+)
 from .bandit import LinUCBPolicy, LinUCBRouter
 from .benchmark import (
     BenchmarkManifest,
@@ -50,6 +58,7 @@ from .reporting import (
     write_calibration_csv,
     write_json,
 )
+from .resilience import ProviderResiliencePolicy, ResilientProviderRegistry
 from .routers import BatchRouter, BatchRouteResult, ParetoRouter, RuleRouter
 from .rules import RoutingRule
 from .scoring import MultiObjectiveScorer
@@ -95,7 +104,7 @@ from .types import (
 try:
     __version__ = version("facetroute")
 except PackageNotFoundError:  # pragma: no cover - source tree without installation
-    __version__ = "0.7.0"
+    __version__ = "0.8.0"
 
 __all__ = [
     "CONTEXT_DIMENSION",
@@ -104,6 +113,10 @@ __all__ = [
     "SIMILARITY_FEATURE_SCHEMA_VERSION",
     "SIMILARITY_FORMAT",
     "SIMILARITY_SCHEMA_VERSION",
+    "AsyncChatCompletionProvider",
+    "AsyncProviderRegistry",
+    "AsyncProviderTarget",
+    "AsyncRoutingController",
     "BatchRouteResult",
     "BatchRouter",
     "BenchmarkExample",
@@ -142,12 +155,16 @@ __all__ = [
     "ProviderError",
     "ProviderFailure",
     "ProviderRegistry",
+    "ProviderResiliencePolicy",
     "ProviderTarget",
     "QueryFeatureExtractor",
     "QueryFeatures",
+    "ResilientProviderRegistry",
     "RouteDecision",
     "RouteRequest",
     "RouteTrace",
+    "RoutedCompletion",
+    "RoutedStream",
     "RoutingRule",
     "RuleRouter",
     "ScoreBreakdown",

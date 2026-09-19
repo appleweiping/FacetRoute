@@ -36,12 +36,13 @@ from .factorization import (
 )
 from .feedback import FeedbackEvent, FeedbackLog
 from .persistence import _atomic_write_bytes_bundle, _json_bytes
-from .providers import load_provider_registry
+from .providers import ProviderRegistry, load_provider_registry
 from .reporting import (
     write_benchmark_bundle,
     write_calibration_csv,
     write_json,
 )
+from .resilience import ProviderResiliencePolicy, ResilientProviderRegistry
 from .routers import ParetoRouter, Router, RuleRouter
 from .server import create_server
 from .similarity import (
@@ -587,7 +588,17 @@ def _run_serve(args: argparse.Namespace) -> int:
             "non-loopback binding requires a bearer token environment variable or "
             "--allow-unauthenticated-nonloopback"
         )
-    providers = None
+    providers: ProviderRegistry | ResilientProviderRegistry | None = None
+    if args.provider_resilience and not args.providers:
+        raise ValueError("--provider-resilience requires --providers")
+    if not args.provider_resilience and (
+        args.provider_retry_attempts != 1
+        or args.provider_retry_backoff != 0.1
+        or args.provider_retry_max_backoff != 2.0
+        or args.provider_circuit_failures != 3
+        or args.provider_circuit_recovery != 30.0
+    ):
+        raise ValueError("provider retry/circuit options require --provider-resilience")
     if args.providers:
         providers = load_provider_registry(
             args.providers,
@@ -605,6 +616,17 @@ def _run_serve(args: argparse.Namespace) -> int:
         if missing_models:
             raise ValueError(
                 f"provider configuration is missing enabled catalog models: {sorted(missing_models)}"
+            )
+        if args.provider_resilience:
+            providers = ResilientProviderRegistry(
+                providers,
+                ProviderResiliencePolicy(
+                    max_attempts=args.provider_retry_attempts,
+                    initial_backoff_seconds=args.provider_retry_backoff,
+                    max_backoff_seconds=args.provider_retry_max_backoff,
+                    failure_threshold=args.provider_circuit_failures,
+                    recovery_seconds=args.provider_circuit_recovery,
+                ),
             )
     server = create_server(
         router,
@@ -821,6 +843,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="JSON catalog-model to OpenAI-compatible provider bindings",
     )
     serve.add_argument("--provider-timeout", type=float, default=60.0)
+    serve.add_argument(
+        "--provider-resilience",
+        action="store_true",
+        help="enable per-model circuit breaking; retries remain off unless attempts > 1",
+    )
+    serve.add_argument("--provider-retry-attempts", type=int, default=1)
+    serve.add_argument("--provider-retry-backoff", type=float, default=0.1)
+    serve.add_argument("--provider-retry-max-backoff", type=float, default=2.0)
+    serve.add_argument("--provider-circuit-failures", type=int, default=3)
+    serve.add_argument("--provider-circuit-recovery", type=float, default=30.0)
     serve.add_argument("--max-provider-response-bytes", type=int, default=16 * 1024 * 1024)
     serve.add_argument("--max-provider-stream-bytes", type=int, default=64 * 1024 * 1024)
     serve.add_argument("--max-provider-event-bytes", type=int, default=1024 * 1024)

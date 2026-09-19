@@ -4,7 +4,18 @@ Notable changes are recorded here. Versions follow semantic versioning.
 
 ## [Unreleased]
 
-_No changes yet._
+## [0.8.0] - 2026-09-19
+
+### Added
+
+- Opt-in per-model provider circuit breaking with a bounded half-open probe,
+  explicit pre-send-only retry/backoff, and an original-call deadline budget.
+  Default proxy behavior remains a single attempt with no circuit breaker.
+- Injectable asynchronous provider registry and routing controller, including
+  validated completions/SSE chunks and the same conservative retry semantics.
+- Fake-clock, concurrent half-open, deadline, partial-stream, async-controller,
+  and local HTTP integration regressions. See `docs/provider-resilience.md` for
+  the remaining native async transport and external-provider CI work.
 
 ## [0.7.0] - 2026-09-19
 

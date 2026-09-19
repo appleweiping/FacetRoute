@@ -18,6 +18,7 @@ from facetroute.providers import (
     ProviderRegistry,
     ProviderTarget,
 )
+from facetroute.resilience import ProviderResiliencePolicy, ResilientProviderRegistry
 from facetroute.routers import RuleRouter
 from facetroute.server import (
     FacetRouteHandler,
@@ -181,6 +182,37 @@ def test_chat_completion_routes_then_executes_injected_provider(three_models):
     assert forwarded["model"] == "facetroute"
     assert forwarded["user"] == "customer-1"
     assert "facetroute" not in forwarded
+
+
+def test_opt_in_resilience_retries_only_certified_pre_send_failure_over_http(three_models):
+    class ConnectFlakyProvider(RecordingProvider):
+        def complete(self, payload, *, model, timeout_seconds):
+            if not self.calls:
+                self.calls.append((model, dict(payload), timeout_seconds))
+                raise ProviderError(ProviderFailure.UNAVAILABLE, retry_safe=True)
+            return super().complete(payload, model=model, timeout_seconds=timeout_seconds)
+
+    provider = ConnectFlakyProvider()
+    registry = ResilientProviderRegistry(
+        _provider_registry(provider),
+        ProviderResiliencePolicy(max_attempts=2, initial_backoff_seconds=0),
+    )
+    with running_server(three_models, provider_registry=registry) as address:
+        status, body, headers = request_json(
+            address,
+            "POST",
+            "/v1/chat/completions",
+            {
+                "model": "facetroute",
+                "messages": [{"role": "user", "content": "Use a tool"}],
+                "tools": [{"type": "function"}],
+            },
+        )
+    assert status == 200
+    assert body["object"] == "chat.completion"
+    assert headers["x-facetroute-model"] == "quality"
+    assert len(provider.calls) == 2
+    assert {call[0] for call in provider.calls} == {"provider/quality-v1"}
 
 
 def test_chat_completion_stream_is_chunked_sse_with_terminal_marker(three_models):

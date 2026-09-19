@@ -19,6 +19,7 @@ from ._json import loads_strict
 from .config import request_from_dict
 from .errors import ConfigurationError, FacetRouteError
 from .providers import ProviderError, ProviderFailure, ProviderRegistry
+from .resilience import ResilientProviderRegistry
 from .routers import Router
 from .types import ModelCandidate, RouteRequest
 
@@ -46,7 +47,7 @@ class FacetRouteHTTPServer(ThreadingHTTPServer):
         max_concurrency: int,
         request_timeout_seconds: float,
         bearer_token: str | None,
-        provider_registry: ProviderRegistry | None,
+        provider_registry: ProviderRegistry | ResilientProviderRegistry | None,
         provider_timeout_seconds: float,
     ) -> None:
         if (
@@ -809,7 +810,7 @@ def create_server(
     max_concurrency: int = 32,
     request_timeout_seconds: float = 10.0,
     bearer_token: str | None = None,
-    provider_registry: ProviderRegistry | None = None,
+    provider_registry: ProviderRegistry | ResilientProviderRegistry | None = None,
     provider_timeout_seconds: float = 60.0,
 ) -> FacetRouteHTTPServer:
     """Create, but do not start, a bounded routing HTTP server."""

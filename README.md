@@ -122,7 +122,11 @@ change preferences; neither can make an ineligible model selectable.
   `/v1/route`, and optional `/v1/chat/completions` endpoints with bounded
   request/response/event sizes, concurrency and timeouts; non-streaming JSON and
   chunked SSE; injectable providers; environment-only credentials; optional
-  bearer authentication; and redacted structured upstream failures.
+  bearer authentication; redacted structured upstream failures; and opt-in
+  pre-send-only retry/backoff with per-model circuit breaking. Python callers
+  can also inject a genuinely asynchronous provider client/controller. See
+  [provider resilience](docs/provider-resilience.md) for safety boundaries and
+  remaining async-transport work.
 - **CLI**: `route`, `simulate`, `feedback`, `report`, `split-traces`, `calibrate`,
   `train-similarity`, `train-factorization`, `benchmark`, `normalize-benchmark`, and `serve`.
 

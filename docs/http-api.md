@@ -47,6 +47,13 @@ Provider response, stream, event, and timeout limits are configurable with:
 - `--max-provider-stream-bytes` (default 64 MiB);
 - `--max-provider-event-bytes` (default 1 MiB).
 
+By default the proxy makes one upstream attempt and has no circuit breaker.
+`--provider-resilience` opts into per-model circuit breaking;
+`--provider-retry-attempts 2` additionally opts into bounded retries for
+failures certified before request bytes were sent. Post-send timeouts and SSE
+failures are never retried. See [provider resilience](provider-resilience.md)
+for half-open, deadline, asynchronous injection, and non-goal details.
+
 ## Routing requests
 
 The native `/v1/route` body uses `RouteRequest` fields. As an integration
