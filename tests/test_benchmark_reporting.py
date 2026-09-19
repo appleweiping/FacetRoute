@@ -5,6 +5,7 @@ from collections.abc import Callable
 
 import pytest
 
+import facetroute.persistence as persistence_module
 from facetroute.bandit import LinUCBRouter
 from facetroute.benchmark import BenchmarkRunner, PolicySpec
 from facetroute.errors import ConfigurationError
@@ -57,7 +58,8 @@ def test_benchmark_compares_policies_with_reproducible_intervals(
 
     assert first.to_dict() == second.to_dict()
     assert first.manifest.records == 4
-    assert len(first.manifest.dataset_sha256) == 64
+    assert len(first.manifest.dataset_canonical_sha256) == 64
+    assert first.manifest.dataset_file_sha256 is None
     fixed = first.policies["fixed-quality"]
     assert fixed.constraint_violation_rate.estimate == 0.25
     assert fixed.average_quality.estimate == pytest.approx(0.95)
@@ -179,3 +181,21 @@ def test_report_writers_produce_machine_and_human_readable_artifacts(three_model
     assert "<!doctype html>" in html
     assert "rule&lt;&amp;" in html
     assert len(benchmark_rows(report)) == 2
+
+
+@pytest.mark.parametrize("error_type", [OSError, KeyboardInterrupt])
+def test_report_writer_fdopen_failure_cleans_staging_and_preserves_target(
+    tmp_path, monkeypatch, error_type: type[BaseException]
+) -> None:
+    target = tmp_path / "report.json"
+    target.write_bytes(b"old-report")
+
+    def fail_fdopen(*args, **kwargs):
+        raise error_type("injected fdopen failure")
+
+    monkeypatch.setattr(persistence_module.os, "fdopen", fail_fdopen)
+    with pytest.raises(error_type):
+        write_json(target, {"version": 2})
+
+    assert target.read_bytes() == b"old-report"
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["report.json"]

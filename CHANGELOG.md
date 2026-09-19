@@ -6,6 +6,51 @@ Notable changes are recorded here. Versions follow semantic versioning.
 
 _No changes yet._
 
+## [0.6.0] - 2026-09-19
+
+### Added
+
+- A dependency-free, trainable similarity router using bounded lexical and
+  request features, TF-IDF weighting, and normalized per-route prototypes.
+- Leakage-audited fit/calibration/held-out evaluation with deterministic
+  threshold sweeps, minimum coverage, group-disjoint enforcement, and dataset
+  digests.
+- Versioned, atomic similarity state containing the feature vocabulary, IDF,
+  prototype index, route counts, configuration, training/calibration digests,
+  and a canonical payload integrity checksum.
+- `train-similarity`, `--policy similarity`, and optional similarity arms in
+  the counterfactual benchmark, with end-to-end CLI and benchmark coverage.
+- Sparse two-pass prototype fitting and a grouped cumulative threshold sweep,
+  avoiding record-by-vocabulary matrices and repeated calibration ranking.
+- A branch-only coverage gate in CI and release workflows, distinct from
+  pytest-cov's combined statement/branch percentage.
+
+### Security
+
+- Similarity inference preserves the hard-constraint boundary: capability,
+  context, cost, latency, region, block-list, and restricted-data locality
+  filtering completes before the learned index sees an eligible route set.
+- Model/query/feature/record/state sizes and all persisted numeric values are
+  bounded; malformed, duplicate-key, non-finite, corrupt, or schema-mismatched
+  state fails closed.
+- Similarity extractor settings are fully persisted and enforced. State writes
+  are size-checked before atomic replacement, training and benchmark inputs may
+  not alias outputs, and benchmark digests come from the same bounded snapshots
+  that were parsed for execution.
+- The finite default similarity-state envelope is derived from the complete
+  public schema and closes default save/load for every accepted state. Model
+  state is detached into exact built-in immutable snapshots, including inputs
+  supplied through container/scalar/configuration subclasses. Extreme numeric
+  and recursive JSON failures are normalized to domain errors. Strict inputs
+  reject exponent-overflow non-finite numbers, unpaired Unicode surrogates, and
+  nesting beyond 256 containers consistently across supported Python/platform
+  combinations. Interrupted atomic writes clean their temporary files and
+  preserve the prior target before the replacement boundary. Benchmark manifests
+  separate raw-file from canonical trace digests.
+- Public benchmark-format input is bounded by bytes actually read, including
+  a file that grows after an earlier metadata check; invalid UTF-8 and
+  non-integer resource limits fail with explicit errors.
+
 ## [0.5.0] - 2026-09-07
 
 ### Added

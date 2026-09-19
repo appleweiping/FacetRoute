@@ -51,6 +51,19 @@ from .server import (
     create_server,
     route_request_from_http,
 )
+from .similarity import (
+    SIMILARITY_FEATURE_SCHEMA_VERSION,
+    SIMILARITY_FORMAT,
+    SIMILARITY_SCHEMA_VERSION,
+    SimilarityCalibrationPoint,
+    SimilarityEvaluation,
+    SimilarityExperimentReport,
+    SimilarityFeatureConfig,
+    SimilarityMatch,
+    SimilarityModel,
+    SimilarityRouter,
+    fit_calibrate_evaluate,
+)
 from .simulator import EvaluationReport, OfflineSimulator, SimulationObservation
 from .splitting import TracePartitions, split_traces, write_trace_partitions
 from .traces import (
@@ -74,10 +87,13 @@ from .types import (
 try:
     __version__ = version("facetroute")
 except PackageNotFoundError:  # pragma: no cover - source tree without installation
-    __version__ = "0.5.0"
+    __version__ = "0.6.0"
 
 __all__ = [
     "CONTEXT_DIMENSION",
+    "SIMILARITY_FEATURE_SCHEMA_VERSION",
+    "SIMILARITY_FORMAT",
+    "SIMILARITY_SCHEMA_VERSION",
     "BatchRouteResult",
     "BatchRouter",
     "BenchmarkExample",
@@ -122,6 +138,13 @@ __all__ = [
     "RoutingRule",
     "RuleRouter",
     "ScoreBreakdown",
+    "SimilarityCalibrationPoint",
+    "SimilarityEvaluation",
+    "SimilarityExperimentReport",
+    "SimilarityFeatureConfig",
+    "SimilarityMatch",
+    "SimilarityModel",
+    "SimilarityRouter",
     "SimulationObservation",
     "ThresholdCalibrator",
     "TraceOutcome",
@@ -132,6 +155,7 @@ __all__ = [
     "create_server",
     "dominates",
     "file_sha256",
+    "fit_calibrate_evaluate",
     "iter_traces",
     "load_benchmark_examples",
     "load_provider_registry",

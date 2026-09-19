@@ -22,6 +22,10 @@ jobs:
             python: "3.13"
           - os: windows-latest
             python: "3.11"
+          - os: windows-latest
+            python: "3.12"
+          - os: windows-latest
+            python: "3.13"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -33,12 +37,13 @@ jobs:
           version: "0.11.31"
           enable-cache: true
       - run: uv sync --locked --extra dev
-      - run: uv run --locked python -m compileall -q src
-      - run: uv run --locked pytest --cov=facetroute --cov-branch
+      - run: uv run --locked python -m compileall -q src scripts
+      - run: uv run --locked pytest --cov=facetroute --cov-branch --cov-report=json:coverage.json
+      - run: uv run --locked python scripts/check_branch_coverage.py coverage.json
       - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
-        run: uv run --locked ruff check src tests examples
+        run: uv run --locked ruff check src tests examples scripts
       - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
-        run: uv run --locked ruff format --check src tests examples
+        run: uv run --locked ruff format --check src tests examples scripts
       - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
         run: uv run --locked mypy -p facetroute
       - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
@@ -48,10 +53,39 @@ jobs:
       - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
         run: |
           uv run --locked facetroute calibrate --traces examples/traces.jsonl --max-average-cost 0.003 --output /tmp/calibration.json --csv /tmp/calibration.csv
-          uv run --locked facetroute split-traces --traces examples/traces.jsonl --output-dir /tmp/split --dataset-name "synthetic fixture" --source-uri "repository:examples/traces.jsonl" --license MIT
+          uv run --locked facetroute split-traces --traces examples/traces.jsonl --output-dir /tmp/split --dataset-name "synthetic fixture" --source-uri "repository:examples/traces.jsonl" --license MIT --seed 8
           uv run --locked facetroute calibrate --traces /tmp/split/calibration.jsonl --held-out-traces /tmp/split/test.jsonl --max-average-cost 0.003 --output /tmp/held-out.json
-          uv run --locked facetroute benchmark --models examples/models.json --preferences examples/preferences.json --rules examples/rules.json --traces examples/traces.jsonl --bootstrap-samples 100 --output-dir /tmp/benchmark
+          uv run --locked facetroute train-similarity --train-traces /tmp/split/train.jsonl --calibration-traces /tmp/split/calibration.jsonl --held-out-traces /tmp/split/test.jsonl --output /tmp/similarity.json --report /tmp/similarity-report.json
+          uv run --locked facetroute route --models examples/models.json --policy similarity --similarity-model /tmp/similarity.json --query "Explain a matrix proof" > /tmp/similarity-decision.json
+          uv run --locked facetroute benchmark --models examples/models.json --preferences examples/preferences.json --rules examples/rules.json --traces /tmp/split/test.jsonl --policy similarity --similarity-model /tmp/similarity.json --bootstrap-samples 100 --output-dir /tmp/benchmark
+          test -s /tmp/similarity-report.json
+          test -s /tmp/similarity-decision.json
           test -s /tmp/benchmark/benchmark.html
+          uv run --locked python - <<'PY'
+          import json
+          from pathlib import Path
+          from facetroute.traces import file_sha256, load_traces, traces_sha256
+
+          training = json.loads(Path("/tmp/similarity-report.json").read_text())
+          decision = json.loads(Path("/tmp/similarity-decision.json").read_text())
+          benchmark = json.loads(Path("/tmp/benchmark/benchmark.json").read_text())
+          held_out = training["held_out"]
+          metrics = benchmark["policies"]["similarity"]
+          test_path = Path("/tmp/split/test.jsonl")
+          test_traces = load_traces(test_path)
+          sorted_test_traces = tuple(sorted(test_traces, key=lambda row: row.request.request_id))
+          assert held_out["metrics"]["accuracy"] == 1.0
+          assert benchmark["manifest"]["dataset_file_sha256"] == file_sha256(test_path)
+          assert benchmark["manifest"]["dataset_canonical_sha256"] == traces_sha256(test_traces)
+          assert held_out["dataset_canonical_sha256"] == traces_sha256(sorted_test_traces)
+          assert benchmark["manifest"]["records"] == held_out["metrics"]["records"] == 1
+          assert metrics["routed"] == metrics["requests"] == 1
+          assert metrics["failure_rate"]["estimate"] == 0.0
+          assert metrics["average_quality"]["estimate"] > 0.9
+          assert decision["policy"] == "similarity"
+          assert decision["selected_model"] == "marble-reasoner"
+          assert decision["feature_summary"]["similarity"]["used"] is True
+          PY
       - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
         run: uv run --locked python -m build --no-isolation
       - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'

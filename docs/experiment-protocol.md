@@ -28,12 +28,18 @@ the source file.
 
 The three roles are intentionally distinct:
 
-- `train` fits an upstream score model or adaptive-policy configuration;
+- `train` fits an upstream score model, adaptive-policy configuration, or
+  FacetRoute similarity vocabulary and prototypes;
 - `calibration` selects a threshold, cost bound, and other operating point;
 - `test` is opened once for the final comparison.
 
 FacetRoute does not train the supplied `route_score`. A study that imports
 scores must separately prove they were produced without test labels.
+`train-similarity` does train directly from `preferred_model`: it checks all
+supplied partitions for overlap at the declared group key, fits only on train,
+selects its coverage-constrained threshold only on calibration, and, when a
+test partition is supplied, evaluates it once. Its model and report retain
+separate partition digests.
 
 ## 3. Evaluate once
 

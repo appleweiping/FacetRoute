@@ -48,9 +48,13 @@ flowchart LR
     S --> A[Rule score]
     S --> B[Pareto frontier]
     S --> U[LinUCB]
+    S --> TS[Thompson sampling]
+    S --> SI[Similarity prototype]
     A --> D[RouteDecision]
     B --> D
     U --> D
+    TS --> D
+    SI --> D
     D --> E[Offline simulation]
     D --> APP[Caller/provider adapter]
     D --> PX[Optional chat-completions proxy]
@@ -61,6 +65,8 @@ flowchart LR
     FB --> U
     FB --> REP[Report]
     T[Strict counterfactual trace] --> CAL[Threshold calibration]
+    T --> FIT[Leakage-safe similarity fit]
+    FIT --> SI
     T --> BENCH[Policy benchmark + bootstrap CI]
     CAL --> REP
     BENCH --> REP
@@ -88,15 +94,19 @@ change preferences; neither can make an ineligible model selectable.
 - **Explainable scoring**: normalized cost and latency utility alongside raw
   task quality, explicit bonuses, ranked alternatives, rejected candidates,
   and human-readable reasons.
-- **Three policies**:
+- **Five policies**:
   - `RuleRouter` applies serializable rules as bounded score bonuses;
   - `ParetoRouter` removes quality/cost/latency-dominated candidates;
-  - `LinUCBRouter` learns per-model reward estimates and uncertainty online.
-- **Local state**: atomic versioned JSON for Bandit/profile state and
+  - `LinUCBRouter` learns per-model reward estimates and uncertainty online;
+  - `ThompsonRouter` samples from the same persisted linear posterior;
+  - `SimilarityRouter` uses a fitted, inspectable TF-IDF route prototype and
+    falls back to the deterministic objective below its calibrated threshold.
+- **Local state**: atomic versioned JSON for Bandit/profile/similarity state and
   append-only JSONL feedback suitable for inspection and replay.
-- **Strict counterfactual traces**: duplicate-key and non-finite-number
-  rejection, stable request IDs, bounded line/record sizes, complete observed
-  outcome validation, and SHA-256 provenance.
+- **Strict counterfactual traces**: duplicate-key, non-finite-number,
+  non-UTF-8/unpaired-surrogate, and excessive-nesting rejection; stable request
+  IDs; bounded line/record sizes; complete observed outcome validation; and
+  SHA-256 provenance.
 - **Calibration and policy benchmarks**: strong/weak score thresholds,
   cost-quality Pareto curves, fixed-model baselines, rule/Pareto/LinUCB
   comparisons, quality regret, constraint violations, and seeded bootstrap
@@ -112,7 +122,7 @@ change preferences; neither can make an ineligible model selectable.
   chunked SSE; injectable providers; environment-only credentials; optional
   bearer authentication; and redacted structured upstream failures.
 - **CLI**: `route`, `simulate`, `feedback`, `report`, `split-traces`, `calibrate`,
-  `benchmark`, `normalize-benchmark`, and `serve`.
+  `train-similarity`, `benchmark`, `normalize-benchmark`, and `serve`.
 
 ## Install
 
@@ -233,6 +243,21 @@ facetroute calibrate \
   --held-out-group-by user_id \
   --max-average-cost 0.0025 \
   --output artifacts/held-out-calibration.json
+
+facetroute train-similarity \
+  --train-traces artifacts/split/train.jsonl \
+  --calibration-traces artifacts/split/calibration.jsonl \
+  --held-out-traces artifacts/split/test.jsonl \
+  --group-by user_id \
+  --minimum-coverage 0.5 \
+  --output artifacts/similarity-model.json \
+  --report artifacts/similarity-training.json
+
+facetroute route \
+  --models examples/models.json \
+  --policy similarity \
+  --similarity-model artifacts/similarity-model.json \
+  --query "Design edge cases for a parser"
 ```
 
 The selected threshold sees only the calibration partition. FacetRoute rejects
@@ -242,6 +267,11 @@ held-out partition. The report records that leakage key and both group counts.
 Without `--held-out-traces`, the established calibration report schema remains
 version 1; reports with held-out audit data use schema 2. See the
 [experiment protocol](docs/experiment-protocol.md) for the complete boundary.
+Similarity training requires a `preferred_model` label on every row. Its fit,
+threshold choice, and final evaluation consume train, calibration, and held-out
+partitions respectively, and reject overlap at the same declared group key.
+See [the similarity router contract](docs/similarity-router.md) for the feature
+equations, state schema, limits, fallback behavior, and threat boundary.
 
 ## Python API
 
@@ -365,21 +395,22 @@ that conflict rejects every candidate instead of weakening the profile.
 
 ## Routing policies
 
-FacetRoute ships four policies, and they form one class hierarchy:
-`ParetoRouter` and `LinUCBRouter` subclass `RuleRouter`, and `ThompsonRouter`
-subclasses `LinUCBRouter`, each overriding only how the eligible set is narrowed
-or re-scored. Every policy therefore runs the same
-`ConstraintEngine` and the same `MultiObjectiveScorer` before it chooses, and
-each decision records the policy that produced it. Select one with
+FacetRoute ships five policies. `ParetoRouter`, `LinUCBRouter`, and
+`SimilarityRouter` reuse the rule router's constraint, preference, and
+explanation primitives; `ThompsonRouter` reuses the LinUCB posterior. Every
+policy applies the same `ConstraintEngine` before a learned or deterministic
+preference can choose a model, and each decision records the policy that
+produced it. Select one with
 `--policy rule` (the default), `--policy pareto`, `--policy linucb`, or
-`--policy thompson` on `route`, `simulate`, and `serve`; `benchmark` accepts the
-same four names plus `fixed` for single-model baselines.
+`--policy thompson`, or `--policy similarity` on `route`, `simulate`, and
+`serve`; similarity also requires `--similarity-model`. `benchmark` accepts the
+same five names plus `fixed` for single-model baselines.
 
-Only `linucb` and `thompson` hold state or change with feedback. `rule` and `pareto` are
-functions of the catalog, the profile, the rules, and the request alone, so the
-same inputs always yield the same selection and the same score.
+Only `linucb` and `thompson` change with online feedback. `rule`, `pareto`, and
+a loaded similarity artifact are deterministic functions of their declared
+inputs.
 
-The same request under all three:
+For a compact comparison, the same request under three of the five policies:
 
 ```bash
 show='import json, sys
@@ -406,7 +437,7 @@ linucb marble-reasoner 0.8534
 ```
 
 The projection only keeps the example short; `route` still prints the complete
-decision JSON described above. All three pick `marble-reasoner` here. The
+decision JSON described above. All three shown pick `marble-reasoner` here. The
 LinUCB total is higher because an untrained arm predicts reward `0.0000` and
 adds its exploration bonus on top of the weighted deterministic prior, which is
 visible in that decision's own `explanation` field.
@@ -436,6 +467,34 @@ For each eligible candidate, Pareto routing uses three objectives:
 A model is dominated only when another model is at least as good on every
 objective and strictly better on one. Multi-objective scoring chooses within
 the resulting frontier. Equal points remain on the frontier.
+
+### Similarity policy
+
+Similarity training learns no external embedding. Feature schema 1 case-folds
+bounded Unicode word tokens and combines their sublinear term frequencies with
+task, capability, sensitivity, tool/JSON, difficulty, length, code, math,
+question, and multi-step signals. IDF is fitted on the training partition. Each
+labelled request vector is L2-normalized, vectors with the same
+`preferred_model` are averaged, and each per-route centroid is normalized
+again. Inference ranks eligible prototypes by cosine similarity; exact ties use
+`model_id`.
+
+Capability, tool/JSON, context, region, privacy, cost, latency, enabled-state,
+and profile constraints run first. A filtered model cannot be restored by its
+similarity. When no trained prototype is eligible, or the best score is below
+the calibrated threshold, the router uses the ordinary deterministic
+multi-objective fallback. The decision records every eligible trained-route
+score and the largest feature-wise dot-product contributions; eligible catalog
+models without a prototype appear only when fallback is used.
+
+The artifact is inspectable JSON containing the exact feature configuration,
+including the built-in extractor's long-query scale,
+sorted vocabulary, IDF vector, normalized route prototypes and counts,
+training/calibration trace digests, schema versions, and a canonical SHA-256
+payload checksum. Loading is strict and bounded. The checksum detects accidental
+or uncoordinated modification; it is not a signature or a defense against an
+attacker who can replace both the file and checksum. Sign or authenticate the
+artifact in a deployment that needs origin assurance.
 
 ### LinUCB policy
 
@@ -570,8 +629,11 @@ route-score model or policy; FacetRoute does not pretend that a supplied
 ## Offline benchmark methodology
 
 `benchmark` replays the same ordered traces through rule, Pareto, fresh online
-LinUCB, and fixed-candidate policies by default. For each selection it looks up
-the already observed outcome; it never makes a model call. Reports contain:
+LinUCB/Thompson, and fixed-candidate policies by default. Supplying
+`--similarity-model` adds the trained similarity policy to that default set, or
+it can be selected explicitly with `--policy similarity`. For each selection
+the runner looks up the already observed outcome; it never makes a model call.
+Reports contain:
 
 - quality, observed cost, latency, p95 latency, and success;
 - quality regret against the best observed eligible candidate;
@@ -579,6 +641,11 @@ the already observed outcome; it never makes a model call. Reports contain:
 - selection counts and index-keyed, non-traceback errors;
 - seeded percentile-bootstrap intervals;
 - exact trace/configuration and canonical catalog SHA-256 digests.
+
+The benchmark manifest keeps the trace's exact `dataset_file_sha256` separate
+from `dataset_canonical_sha256`, which hashes canonical parsed records in the
+order actually executed. This prevents raw-file provenance from being confused
+with similarity's request-ID-sorted semantic hashes.
 
 Fixed baselines deliberately remain selectable when ineligible so their
 violation rate is visible. Confidence intervals describe sampling uncertainty
@@ -676,6 +743,11 @@ metrics while preserving the same `FeedbackEvent` contract.
   tuning against the same holdout.
 - Linear contextual Bandits cannot represent every interaction. Their value
   here is inspectability, fast online updates, and a small dependency surface.
+- Lexical similarity cannot infer semantic equivalence that shares no fitted
+  terms or structured signals. Unknown terms are ignored, and an eligible
+  catalog model without a fitted prototype is considered only by the
+  deterministic fallback. Refit under a newly declared feature schema rather
+  than silently changing an existing artifact.
 - JSONL appends are protected inside one process, not coordinated across a
   distributed fleet. Use a transactional event store when multiple processes
   write the same stream.
@@ -722,7 +794,8 @@ constraint, score normalization, rules, Pareto dominance, batch errors,
 LinUCB learning and persistence, feedback integrity, strict traces,
 calibration, bootstrap benchmarking, reports, HTTP security/error boundaries,
 provider registry validation, routed completion execution, bounded OpenAI-style
-JSON/SSE handling, simulation, configuration, and all nine CLI commands. Tests
+JSON/SSE handling, similarity cosine/prototype oracles, leakage and state
+integrity boundaries, simulation, configuration, and all ten CLI commands. Tests
 are offline and use temporary directories and loopback-only fixture servers.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for change and disclosure expectations

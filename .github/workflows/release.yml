@@ -35,9 +35,9 @@ jobs:
       - name: Run static quality and security gates
         shell: bash
         run: |
-          uv run --locked python -m compileall -q src tests examples
-          uv run --locked ruff check src tests examples
-          uv run --locked ruff format --check src tests examples
+          uv run --locked python -m compileall -q src tests examples scripts
+          uv run --locked ruff check src tests examples scripts
+          uv run --locked ruff format --check src tests examples scripts
           uv run --locked mypy -p facetroute
           uv run --locked bandit -q -c pyproject.toml -r src
           uv audit --locked
@@ -49,7 +49,9 @@ jobs:
           citation_version="$(sed -n 's/^version: //p' CITATION.cff)"
           test "${citation_version}" = "${version}"
       - name: Run release tests
-        run: uv run --locked pytest --cov=facetroute --cov-branch
+        run: uv run --locked pytest --cov=facetroute --cov-branch --cov-report=json:coverage.json
+      - name: Require at least 90 percent pure branch coverage
+        run: uv run --locked python scripts/check_branch_coverage.py coverage.json
       - name: Build distributions
         run: uv run --locked python -m build --no-isolation
       - name: Verify the wheel in a clean environment

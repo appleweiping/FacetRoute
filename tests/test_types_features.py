@@ -71,6 +71,37 @@ def test_model_rejects_string_collection_and_non_boolean_json_fields(
         ModelCandidate.from_dict(payload)
 
 
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        ({"display_name": "  "}, "display_name"),
+        ({"context_window": True}, "context_window"),
+        ({"context_window": 0}, "context_window"),
+        ({"quality_by_task": {}}, "quality_by_task"),
+        ({"quality_by_task": {" ": 0.5}}, "quality task names"),
+        ({"input_cost_per_million": float("inf")}, "finite non-negative"),
+        ({"capabilities": ["text", 4]}, "only strings"),
+        ({"capabilities": [" ", "text"]}, ""),
+        ({"regions": 3}, "collection of strings"),
+    ],
+)
+def test_model_rejects_invalid_direct_domain_inputs(
+    make_model: Callable[..., ModelCandidate], changes: dict[str, object], message: str
+) -> None:
+    if message:
+        with pytest.raises(ConfigurationError, match=message):
+            make_model(**changes)
+    else:
+        assert make_model(**changes).capabilities == frozenset({"text"})
+
+
+def test_model_rejects_negative_cost_estimation_tokens(
+    make_model: Callable[..., ModelCandidate],
+) -> None:
+    with pytest.raises(ConfigurationError, match="token counts"):
+        make_model().estimate_cost(-1, 1)
+
+
 def test_model_direct_api_rejects_non_boolean_flags(
     make_model: Callable[..., ModelCandidate],
 ) -> None:
@@ -100,6 +131,34 @@ def test_profile_applies_task_weight_override() -> None:
     assert profile.objective_weights("math") == pytest.approx((0.8, 0.1, 0.1))
 
 
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        ({"user_id": "  "}, "user_id"),
+        ({"quality_weight": 0, "cost_weight": 0, "latency_weight": 0}, "positive"),
+        ({"preferred_models": ["m", 9]}, "only strings"),
+        ({"blocked_models": "m"}, "collection of strings"),
+        ({"preferred_models": [" ", "m"]}, ""),
+        ({"task_weight_overrides": {"math": {"energy": 1}}}, "unsupported"),
+    ],
+)
+def test_profile_domain_input_boundaries(changes: dict[str, object], message: str) -> None:
+    if message:
+        with pytest.raises(ConfigurationError, match=message):
+            UserPreferences(**{"user_id": "u", **changes})
+    else:
+        assert UserPreferences(**{"user_id": "u", **changes}).preferred_models == frozenset({"m"})
+
+
+def test_profile_rejects_zero_task_specific_objective() -> None:
+    profile = UserPreferences(
+        user_id="u",
+        task_weight_overrides={"math": {"quality": 0, "cost": 0, "latency": 0}},
+    )
+    with pytest.raises(ConfigurationError, match="sum to zero"):
+        profile.objective_weights("math")
+
+
 def test_request_rejects_empty_query() -> None:
     with pytest.raises(ConfigurationError, match="query"):
         RouteRequest(query="  ")
@@ -113,6 +172,23 @@ def test_request_rejects_unknown_sensitivity() -> None:
 def test_request_rejects_empty_request_id() -> None:
     with pytest.raises(ConfigurationError, match="request_id"):
         RouteRequest(query="hello", request_id=" ")
+
+
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        ({"user_id": "  "}, "user_id"),
+        ({"expected_output_tokens": True}, "integer"),
+        ({"expected_output_tokens": -1}, "negative"),
+        ({"context_tokens": True}, "integer"),
+        ({"context_tokens": -1}, "negative"),
+    ],
+)
+def test_request_rejects_invalid_token_and_identity_inputs(
+    changes: dict[str, object], message: str
+) -> None:
+    with pytest.raises(ConfigurationError, match=message):
+        RouteRequest(query="hello", **changes)
 
 
 def test_request_direct_api_rejects_non_boolean_flags() -> None:

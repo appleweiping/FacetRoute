@@ -95,6 +95,14 @@ def test_trace_loader_rejects_ambiguous_or_invalid_json(tmp_path, line, message)
         load_traces(source)
 
 
+def test_trace_loader_normalizes_excessive_json_nesting(tmp_path) -> None:
+    source = tmp_path / "deep.jsonl"
+    source.write_text("[" * 1_200 + "0" + "]" * 1_200 + "\n", encoding="utf-8")
+
+    with pytest.raises(ConfigurationError, match="nesting exceeds"):
+        load_traces(source)
+
+
 def test_trace_loader_rejects_duplicate_ids_and_limits(tmp_path):
     source = tmp_path / "duplicate.jsonl"
     line = json.dumps(_trace("same", 0.5).to_dict())
@@ -135,6 +143,70 @@ def test_trace_schema_validates_pair_ids_outcomes_and_numbers():
         RouteTrace(request, {"a": object()})  # type: ignore[dict-item]
     with pytest.raises(ConfigurationError, match="trimmed"):
         RouteTrace(request, {" a ": outcome})
+
+
+def test_trace_direct_api_rejects_missing_or_wrong_domain_objects():
+    request = RouteRequest("q", request_id="r")
+    outcome = TraceOutcome(0.5, 0.0, 1.0, True)
+    with pytest.raises(ConfigurationError, match="RouteRequest"):
+        RouteTrace("q", {"m": outcome})  # type: ignore[arg-type]
+    with pytest.raises(ConfigurationError, match="cannot be empty"):
+        RouteTrace(request, {})
+    with pytest.raises(ConfigurationError, match="must have outcomes"):
+        RouteTrace(
+            request,
+            {"m": outcome},
+            strong_model="m",
+            weak_model="missing",
+            route_score=0.5,
+        )
+    with pytest.raises(ConfigurationError, match="route_score is required"):
+        RouteTrace(
+            request,
+            {"m": outcome, "n": outcome},
+            strong_model="m",
+            weak_model="n",
+        )
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        ({"quality": 0.5, "cost_usd": 0, "latency_ms": 1}, "missing outcome field"),
+        (
+            {"quality": 0.5, "cost_usd": 0, "latency_ms": 1, "success": True, "extra": 1},
+            "unknown outcome fields",
+        ),
+        ({"quality": True, "cost_usd": 0, "latency_ms": 1, "success": True}, "number"),
+        ({"quality": 0.5, "cost_usd": -1, "latency_ms": 1, "success": True}, "finite"),
+    ],
+)
+def test_trace_outcome_rejects_invalid_observations(payload, message):
+    with pytest.raises(ConfigurationError, match=message):
+        TraceOutcome.from_dict(payload)
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ({"request": []}, "request must be a JSON object"),
+        ({"request_id": 3}, "request_id must be a non-empty string"),
+        ({"outcomes": []}, "outcomes must be a JSON object"),
+        ({"outcomes": {"m": 2}}, "must be an object"),
+        ({"outcomes": {" ": {}}}, "non-empty strings"),
+    ],
+)
+def test_trace_deserializer_rejects_malformed_nested_records(change, message):
+    payload = _trace("r", 0.5).to_dict()
+    payload.update(change)
+    with pytest.raises(ConfigurationError, match=message):
+        RouteTrace.from_dict(payload)
+
+
+def test_trace_redacted_export_does_not_include_query():
+    exported = _trace("r", 0.5).to_dict(include_query=False)
+    assert "query" not in exported["request"]
+    assert exported["request_id"] == "r"
 
 
 def test_trace_loader_requires_stable_request_id(tmp_path):

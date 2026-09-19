@@ -413,6 +413,9 @@ def test_response_boundary_encodes_all_unsafe_header_characters():
     [
         (b'{"query":"a","query":"b"}', {}, 400, "invalid_json"),
         (b'{"query":NaN}', {}, 400, "invalid_json"),
+        (b'{"query":"x","metadata":{"overflow":1e999}}', {}, 400, "invalid_json"),
+        (b'{"query":"\\ud800"}', {}, 400, "invalid_json"),
+        (b"[" * 1_200 + b"0" + b"]" * 1_200, {}, 400, "invalid_json"),
         (b"[]", {}, 400, "invalid_json"),
         (b'{"query":"x"}', {"Content-Type": "text/plain"}, 415, "unsupported_media_type"),
         (b'{"query":"x","unknown":1}', {}, 422, "invalid_request"),
@@ -620,3 +623,79 @@ def test_server_configuration_validation(three_models: tuple[ModelCandidate, ...
     unknown = ProviderRegistry((ProviderTarget("unknown", "upstream", provider),))
     with pytest.raises(ValueError, match="unknown catalog models"):
         create_server(router, three_models, provider_registry=unknown)
+
+
+@pytest.mark.parametrize(
+    "addition, message",
+    [
+        ({"unexpected": True}, "unknown chat completion fields"),
+        ({"messages": None}, "messages"),
+        ({"logprobs": 1}, "logprobs must be a boolean"),
+        ({"parallel_tool_calls": 1}, "parallel_tool_calls must be a boolean"),
+        ({"logit_bias": []}, "logit_bias must be an object"),
+        ({"logit_bias": {"1": 101}}, "logit_bias values"),
+        ({"stream": True, "stream_options": {"include_usage": 1}}, "stream_options"),
+        ({"user": " "}, "user must be"),
+        ({"facetroute": []}, "facetroute must be an object"),
+        ({"stop": [1]}, "stop must be"),
+    ],
+)
+def test_chat_completion_boundary_rejects_invalid_forwarded_controls(addition, message):
+    valid = {
+        "model": "facetroute",
+        "messages": [{"role": "user", "content": "hello"}],
+    }
+    with pytest.raises(ConfigurationError, match=message):
+        chat_completion_from_http({**valid, **addition}, request_id="boundary")
+
+
+@pytest.mark.parametrize(
+    "payload, message",
+    [
+        ({"messages": [{"role": "user", "content": "x"}], "unknown": True}, "unknown compatible"),
+        ({"messages": ["not an object"]}, "must be an object"),
+        ({"messages": [{"role": "user", "content": 17}]}, "content must be text"),
+        (
+            {"messages": [{"role": "user", "content": [{"type": "image", "text": "x"}]}]},
+            "must be a text part",
+        ),
+    ],
+)
+def test_request_shaped_boundary_rejects_ambiguous_content(payload, message):
+    with pytest.raises(ConfigurationError, match=message):
+        route_request_from_http(payload, request_id="boundary")
+
+
+def test_server_rejects_invalid_provider_timeout_and_host(three_models):
+    router = RuleRouter(three_models)
+    with pytest.raises(ValueError, match="provider_timeout_seconds"):
+        create_server(router, three_models, provider_timeout_seconds=float("inf"))
+    with pytest.raises(ValueError, match="host"):
+        create_server(router, three_models, host=" ")
+
+
+def test_post_authentication_rejects_before_reading_body(three_models):
+    with running_server(three_models, bearer_token="secret-token") as address:
+        status, payload, headers = request_json(
+            address,
+            "POST",
+            "/v1/route",
+            b'{"query":"do not process"}',
+            headers={"Authorization": "Bearer wrong-token"},
+        )
+    assert status == 401
+    assert payload["error"]["code"] == "unauthorized"
+    assert headers["connection"] == "close"
+
+
+def test_post_requires_exactly_one_content_type_header(three_models):
+    with running_server(three_models) as address:
+        connection = http.client.HTTPConnection(*address, timeout=SOCKET_TIMEOUT_SECONDS)
+        connection.putrequest("POST", "/v1/route")
+        connection.putheader("Content-Length", "13")
+        connection.endheaders(b'{"query":"x"}')
+        response = connection.getresponse()
+        payload = json.loads(response.read())
+        connection.close()
+    assert response.status == 400
+    assert payload["error"]["code"] == "ambiguous_content_type"

@@ -17,21 +17,36 @@ from .bandit import LinUCBPolicy, LinUCBRouter, ThompsonPolicy, ThompsonRouter
 from .benchmark import BenchmarkRunner, PolicySpec
 from .benchmark_formats import BenchmarkFormat, load_benchmark_examples, write_benchmark_examples
 from .calibration import ThresholdCalibrator
-from .config import load_models, load_preferences, load_requests, load_rules, request_from_dict
+from .config import (
+    _load_models_with_sha256,
+    _load_preferences_with_sha256,
+    _load_rules_with_sha256,
+    load_models,
+    load_preferences,
+    load_requests,
+    load_rules,
+    request_from_dict,
+)
 from .errors import FacetRouteError
 from .feedback import FeedbackEvent, FeedbackLog
+from .persistence import _atomic_write_bytes_bundle, _json_bytes
 from .providers import load_provider_registry
 from .reporting import (
-    write_benchmark_csv,
-    write_benchmark_html,
+    write_benchmark_bundle,
     write_calibration_csv,
     write_json,
 )
 from .routers import ParetoRouter, Router, RuleRouter
 from .server import create_server
+from .similarity import (
+    SimilarityFeatureConfig,
+    SimilarityModel,
+    SimilarityRouter,
+    fit_calibrate_evaluate,
+)
 from .simulator import OfflineSimulator
 from .splitting import split_traces, write_trace_partitions
-from .traces import RouteTrace, _load_traces_with_sha256, file_sha256, load_traces
+from .traces import RouteTrace, _load_traces_with_sha256, load_traces
 from .types import ModelCandidate, RouteRequest, UserPreferences
 
 
@@ -40,13 +55,37 @@ def _add_catalog_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--preferences", help="JSON user-profile file")
     parser.add_argument("--rules", help="JSON routing-rule file")
     parser.add_argument(
-        "--policy", choices=("rule", "pareto", "linucb", "thompson"), default="rule"
+        "--policy",
+        choices=("rule", "pareto", "linucb", "thompson", "similarity"),
+        default="rule",
     )
     parser.add_argument("--state", help="LinUCB JSON state path")
+    parser.add_argument(
+        "--similarity-model", help="trained similarity JSON state (required for similarity)"
+    )
     parser.add_argument("--alpha", type=float, default=0.35, help="LinUCB exploration factor")
     parser.add_argument(
         "--prior-weight", type=float, default=0.2, help="deterministic prior in LinUCB"
     )
+
+
+def _paths_collide(left: Path, right: Path) -> bool:
+    try:
+        if left.resolve() == right.resolve():
+            return True
+        return left.exists() and right.exists() and left.samefile(right)
+    except (OSError, RuntimeError):
+        return False
+
+
+def _require_disjoint_paths(paths: dict[str, str | Path | None]) -> None:
+    present = [(name, Path(path)) for name, path in paths.items() if path is not None]
+    for index, (left_name, left_path) in enumerate(present):
+        for right_name, right_path in present[index + 1 :]:
+            if _paths_collide(left_path, right_path):
+                raise ValueError(
+                    f"paths collide: {left_name}={left_path} and {right_name}={right_path}"
+                )
 
 
 def _build_router(
@@ -57,12 +96,26 @@ def _build_router(
     state_path: str | None,
     alpha: float,
     prior_weight: float,
+    similarity_model_path: str | None,
 ) -> Router:
     rules = load_rules(rules_path)
     if policy_name == "rule":
         return RuleRouter(models, preferences, rules)
     if policy_name == "pareto":
         return ParetoRouter(models, preferences, rules)
+    if policy_name == "similarity":
+        if not similarity_model_path:
+            raise ValueError("--similarity-model is required for --policy similarity")
+        if state_path:
+            raise ValueError("--state is only valid for linucb or thompson")
+        return SimilarityRouter(
+            models,
+            SimilarityModel.load(similarity_model_path),
+            preferences,
+            rules,
+        )
+    if policy_name not in {"linucb", "thompson"}:
+        raise ValueError(f"unknown routing policy: {policy_name}")
     # Both bandits keep the same per-arm posterior, so a saved state loads under
     # either. Only the way a score is drawn from it differs.
     thompson = policy_name == "thompson"
@@ -114,6 +167,7 @@ def _run_route(args: argparse.Namespace) -> int:
         args.state,
         args.alpha,
         args.prior_weight,
+        args.similarity_model,
     )
     decision = router.route(_route_request_from_args(args))
     if args.state and isinstance(router, LinUCBRouter):
@@ -133,6 +187,7 @@ def _run_simulate(args: argparse.Namespace) -> int:
         args.state,
         args.alpha,
         args.prior_weight,
+        args.similarity_model,
     )
     requests = load_requests(args.queries)
     log = FeedbackLog(args.feedback_log) if args.feedback_log else None
@@ -244,13 +299,97 @@ def _run_split_traces(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_train_similarity(args: argparse.Namespace) -> int:
+    _require_disjoint_paths(
+        {
+            "train_traces": args.train_traces,
+            "calibration_traces": args.calibration_traces,
+            "held_out_traces": args.held_out_traces,
+            "output": args.output,
+            "report": args.report,
+        }
+    )
+    config = SimilarityFeatureConfig(
+        max_features=args.max_features,
+        min_document_frequency=args.min_document_frequency,
+        max_records=args.max_records,
+        max_query_characters=args.max_query_characters,
+        max_tokens_per_query=args.max_tokens_per_query,
+        max_feature_occurrences=args.max_feature_occurrences,
+        max_prototype_values=args.max_prototype_values,
+        long_query_characters=args.long_query_characters,
+    )
+    training = load_traces(args.train_traces, max_records=config.max_records)
+    calibration = load_traces(args.calibration_traces, max_records=config.max_records)
+    held_out = (
+        load_traces(args.held_out_traces, max_records=config.max_records)
+        if args.held_out_traces
+        else None
+    )
+    model, report = fit_calibrate_evaluate(
+        training,
+        calibration,
+        held_out,
+        config=config,
+        group_by=args.group_by,
+        minimum_coverage=args.minimum_coverage,
+    )
+    payload = report.to_dict()
+    expected_state = model.to_dict()
+    writes = {Path(args.output): model._state_bytes()}
+    if args.report:
+        writes[Path(args.report)] = _json_bytes(payload)
+
+    def validate_model_state(staged_path: Path) -> None:
+        if SimilarityModel.load(staged_path).to_dict() != expected_state:
+            raise ValueError("staged similarity model did not round-trip")
+
+    _atomic_write_bytes_bundle(
+        writes,
+        validators={Path(args.output): validate_model_state},
+    )
+    print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
 def _run_benchmark(args: argparse.Namespace) -> int:
-    models = load_models(args.models)
-    preferences = load_preferences(args.preferences)
-    rules = load_rules(args.rules)
-    traces = load_traces(args.traces)
+    output = Path(args.output_dir)
+    _require_disjoint_paths(
+        {
+            "models": args.models,
+            "preferences": args.preferences,
+            "rules": args.rules,
+            "traces": args.traces,
+            "similarity_model": args.similarity_model,
+            "output_dir": output,
+            "benchmark_json": output / "benchmark.json",
+            "benchmark_csv": output / "benchmark.csv",
+            "benchmark_html": output / "benchmark.html",
+        }
+    )
+    models, models_sha256 = _load_models_with_sha256(args.models)
+    if args.preferences:
+        preferences, preferences_sha256 = _load_preferences_with_sha256(args.preferences)
+    else:
+        preferences, preferences_sha256 = {}, None
+    if args.rules:
+        rules, rules_sha256 = _load_rules_with_sha256(args.rules)
+    else:
+        rules, rules_sha256 = (), None
+    traces, traces_file_sha256 = _load_traces_with_sha256(args.traces)
     policies: list[PolicySpec] = []
-    selected = set(args.policy or ("rule", "pareto", "linucb", "thompson", "fixed"))
+    defaults = ["rule", "pareto", "linucb", "thompson", "fixed"]
+    if args.similarity_model:
+        defaults.append("similarity")
+    selected = set(args.policy or defaults)
+    similarity_model: SimilarityModel | None = None
+    similarity_model_sha256: str | None = None
+    if "similarity" in selected:
+        if not args.similarity_model:
+            raise ValueError("--similarity-model is required for --policy similarity")
+        similarity_model, similarity_model_sha256 = SimilarityModel.load_with_sha256(
+            args.similarity_model
+        )
     if "rule" in selected:
         policies.append(PolicySpec("rule", router=RuleRouter(models, preferences, rules)))
     if "pareto" in selected:
@@ -283,6 +422,20 @@ def _run_benchmark(args: argparse.Namespace) -> int:
                 learn_online=True,
             )
         )
+    if "similarity" in selected:
+        if similarity_model is None:
+            raise ValueError("--similarity-model is required for --policy similarity")
+        policies.append(
+            PolicySpec(
+                "similarity",
+                router=SimilarityRouter(
+                    models,
+                    similarity_model,
+                    preferences,
+                    rules,
+                ),
+            )
+        )
     fixed_models = args.fixed_model
     if "fixed" in selected and not fixed_models:
         fixed_models = [model.model_id for model in models]
@@ -298,21 +451,20 @@ def _run_benchmark(args: argparse.Namespace) -> int:
         bootstrap_samples=args.bootstrap_samples,
         confidence_level=args.confidence,
     )
-    input_digests = {"models": file_sha256(args.models)}
-    if args.preferences:
-        input_digests["preferences"] = file_sha256(args.preferences)
-    if args.rules:
-        input_digests["rules"] = file_sha256(args.rules)
+    input_digests = {"models": models_sha256}
+    if preferences_sha256 is not None:
+        input_digests["preferences"] = preferences_sha256
+    if rules_sha256 is not None:
+        input_digests["rules"] = rules_sha256
+    if similarity_model_sha256 is not None:
+        input_digests["similarity_model"] = similarity_model_sha256
     report = runner.run(
         traces,
         policies,
-        dataset_sha256=file_sha256(args.traces),
+        dataset_file_sha256=traces_file_sha256,
         input_sha256=input_digests,
     )
-    output = Path(args.output_dir)
-    write_json(output / "benchmark.json", report.to_dict())
-    write_benchmark_csv(output / "benchmark.csv", report)
-    write_benchmark_html(output / "benchmark.html", report)
+    write_benchmark_bundle(output, report)
     print(json.dumps(report.to_dict(), indent=2, ensure_ascii=False, sort_keys=True))
     return 0
 
@@ -337,6 +489,7 @@ def _run_serve(args: argparse.Namespace) -> int:
         args.state,
         args.alpha,
         args.prior_weight,
+        args.similarity_model,
     )
     token = os.environ.get(args.token_env) if args.token_env else None
     if not _is_loopback(args.host) and token is None and not args.allow_unauthenticated_nonloopback:
@@ -431,7 +584,9 @@ def build_parser() -> argparse.ArgumentParser:
     feedback.add_argument("--model", required=True)
     feedback.add_argument("--reward", required=True, type=float)
     feedback.add_argument(
-        "--policy", choices=("rule", "pareto", "linucb", "thompson"), required=True
+        "--policy",
+        choices=("rule", "pareto", "linucb", "thompson", "similarity"),
+        required=True,
     )
     feedback.add_argument("--context", help="JSON numeric vector; required for state update")
     feedback.add_argument("--state", help="existing LinUCB state to update")
@@ -493,6 +648,31 @@ def build_parser() -> argparse.ArgumentParser:
     )
     split.set_defaults(handler=_run_split_traces)
 
+    train_similarity = commands.add_parser(
+        "train-similarity",
+        help="fit and calibrate a versioned similarity model from disjoint traces",
+    )
+    train_similarity.add_argument("--train-traces", required=True)
+    train_similarity.add_argument("--calibration-traces", required=True)
+    train_similarity.add_argument("--held-out-traces")
+    train_similarity.add_argument(
+        "--group-by",
+        default="request_id",
+        help="leakage unit: request_id, user_id, or metadata:<field>",
+    )
+    train_similarity.add_argument("--minimum-coverage", type=float, default=0.5)
+    train_similarity.add_argument("--max-features", type=int, default=2_048)
+    train_similarity.add_argument("--min-document-frequency", type=int, default=1)
+    train_similarity.add_argument("--max-records", type=int, default=100_000)
+    train_similarity.add_argument("--max-query-characters", type=int, default=100_000)
+    train_similarity.add_argument("--max-tokens-per-query", type=int, default=2_048)
+    train_similarity.add_argument("--max-feature-occurrences", type=int, default=1_000_000)
+    train_similarity.add_argument("--max-prototype-values", type=int, default=250_000)
+    train_similarity.add_argument("--long-query-characters", type=int, default=1_200)
+    train_similarity.add_argument("--output", required=True, help="similarity model JSON")
+    train_similarity.add_argument("--report", help="optional calibration report JSON")
+    train_similarity.set_defaults(handler=_run_train_similarity)
+
     benchmark = commands.add_parser(
         "benchmark", help="compare routers against observed counterfactual outcomes"
     )
@@ -503,13 +683,14 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument(
         "--policy",
         action="append",
-        choices=("rule", "pareto", "linucb", "thompson", "fixed"),
+        choices=("rule", "pareto", "linucb", "thompson", "similarity", "fixed"),
         default=[],
         help="policy to include; repeatable (default: all)",
     )
     benchmark.add_argument("--fixed-model", action="append", default=[])
     benchmark.add_argument("--alpha", type=float, default=0.35)
     benchmark.add_argument("--prior-weight", type=float, default=0.2)
+    benchmark.add_argument("--similarity-model", help="trained similarity JSON state")
     benchmark.add_argument("--seed", type=int, default=17)
     benchmark.add_argument("--bootstrap-samples", type=int, default=1000)
     benchmark.add_argument("--confidence", type=float, default=0.95)

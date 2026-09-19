@@ -22,13 +22,16 @@ finite. Unknown fields are rejected instead of silently ignored.
 
 ## Integrity rules
 
-- Duplicate keys, `NaN`, infinity, invalid UTF-8, and non-object rows are
-  rejected with source path and line number.
+- Duplicate keys, named or exponent-overflow non-finite numbers, invalid UTF-8,
+  unpaired Unicode surrogates, JSON nesting beyond 256 containers, and
+  non-object rows are rejected with source path and line number.
 - Request IDs are stable and unique across the file.
 - Strong and weak IDs are supplied together, differ, and both have outcomes.
 - Every row in one calibration run uses the same ordered pair.
-- CLI reports hash exact file bytes. Library reports hash canonical parsed
-  traces when no external digest is supplied.
+- Calibration's `dataset_sha256` reports exact file bytes on its CLI path and
+  canonical parsed traces when invoked as a library. Benchmark manifests avoid
+  that legacy overloading: `dataset_file_sha256` is the exact parsed byte stream
+  and `dataset_canonical_sha256` is the canonical parsed trace sequence.
 - Calibration and held-out files must have disjoint values for the declared
   `held_out_group_by` leakage key and the same ordered strong/weak model pair.
   The default leakage key is `request_id`; use `user_id` or

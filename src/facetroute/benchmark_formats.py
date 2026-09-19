@@ -211,15 +211,27 @@ def load_benchmark_examples(
 ) -> tuple[BenchmarkExample, ...]:
     """Load MMLU, GSM8K, or MT-Bench JSON/JSONL with strict limits."""
 
-    if isinstance(max_bytes, bool) or max_bytes <= 0 or max_records <= 0:
+    if (
+        isinstance(max_bytes, bool)
+        or not isinstance(max_bytes, int)
+        or max_bytes <= 0
+        or isinstance(max_records, bool)
+        or not isinstance(max_records, int)
+        or max_records <= 0
+    ):
         raise ValueError("benchmark limits must be positive")
     source = Path(path)
     try:
-        if source.stat().st_size > max_bytes:
-            raise ConfigurationError(f"benchmark input exceeds {max_bytes} bytes")
-        text = source.read_text(encoding="utf-8")
+        with source.open("rb") as handle:
+            raw = handle.read(max_bytes + 1)
     except OSError as exc:
         raise ConfigurationError(f"cannot read benchmark input {source}: {exc}") from exc
+    if len(raw) > max_bytes:
+        raise ConfigurationError(f"benchmark input exceeds {max_bytes} bytes")
+    try:
+        text = raw.decode("utf-8", "strict")
+    except UnicodeDecodeError as exc:
+        raise ConfigurationError(f"invalid benchmark UTF-8 in {source}: {exc}") from exc
     try:
         try:
             payload = loads_strict(text)

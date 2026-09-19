@@ -83,7 +83,8 @@ class BenchmarkMetrics:
 
 @dataclass(frozen=True, slots=True)
 class BenchmarkManifest:
-    dataset_sha256: str
+    dataset_canonical_sha256: str
+    dataset_file_sha256: str | None
     catalog_sha256: str
     records: int
     seed: int
@@ -96,7 +97,8 @@ class BenchmarkManifest:
     def to_dict(self) -> dict[str, Any]:
         return {
             "schema_version": 1,
-            "dataset_sha256": self.dataset_sha256,
+            "dataset_canonical_sha256": self.dataset_canonical_sha256,
+            "dataset_file_sha256": self.dataset_file_sha256,
             "catalog_sha256": self.catalog_sha256,
             "records": self.records,
             "seed": self.seed,
@@ -204,7 +206,7 @@ class BenchmarkRunner:
         traces: Iterable[RouteTrace],
         policies: Iterable[PolicySpec],
         *,
-        dataset_sha256: str | None = None,
+        dataset_file_sha256: str | None = None,
         input_sha256: Mapping[str, str] | None = None,
     ) -> BenchmarkReport:
         trace_tuple = tuple(traces)
@@ -233,13 +235,13 @@ class BenchmarkRunner:
                     f"trace {trace.request.request_id} contains unknown models: {sorted(unknown)}"
                 )
         metrics = {spec.name: self._run_policy(trace_tuple, spec) for spec in specs}
-        dataset_digest = dataset_sha256 or self._trace_digest(trace_tuple)
-        if (
-            not isinstance(dataset_digest, str)
-            or len(dataset_digest) != 64
-            or any(char not in "0123456789abcdef" for char in dataset_digest)
+        dataset_digest = self._trace_digest(trace_tuple)
+        if dataset_file_sha256 is not None and (
+            not isinstance(dataset_file_sha256, str)
+            or len(dataset_file_sha256) != 64
+            or any(char not in "0123456789abcdef" for char in dataset_file_sha256)
         ):
-            raise ConfigurationError("dataset_sha256 must be a lowercase SHA-256 digest")
+            raise ConfigurationError("dataset_file_sha256 must be a lowercase SHA-256 digest")
         input_digests = dict(input_sha256 or {})
         for name, digest in input_digests.items():
             if not isinstance(name, str) or not name.strip():
@@ -252,7 +254,8 @@ class BenchmarkRunner:
                 raise ConfigurationError(f"input digest for {name!r} is not lowercase SHA-256")
         return BenchmarkReport(
             manifest=BenchmarkManifest(
-                dataset_sha256=dataset_digest,
+                dataset_canonical_sha256=dataset_digest,
+                dataset_file_sha256=dataset_file_sha256,
                 catalog_sha256=self._catalog_digest(),
                 records=len(trace_tuple),
                 seed=self.seed,

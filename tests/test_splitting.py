@@ -198,6 +198,57 @@ def test_trace_partitions_validate_group_and_configuration_invariants() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        ({"train": ["not a tuple"]}, "must be tuples"),
+        ({"train": ()}, "non-empty"),
+        ({"group_by": 7}, "group_by"),
+        ({"train": ("not a trace",)}, "RouteTrace"),
+        ({"train_fraction": True}, "train_fraction"),
+        ({"calibration_fraction": float("inf")}, "calibration_fraction"),
+        ({"train_fraction": 0.8, "calibration_fraction": 0.2}, "sum"),
+    ],
+)
+def test_trace_partition_constructor_rejects_invalid_domain_state(changes, message):
+    traces = _traces(users=3)
+    values = {
+        "train": (traces[0],),
+        "calibration": (traces[2],),
+        "test": (traces[4],),
+        "seed": 17,
+        "group_by": "user_id",
+        "train_fraction": 0.6,
+        "calibration_fraction": 0.2,
+    }
+    with pytest.raises(ConfigurationError, match=message):
+        TracePartitions(**{**values, **changes})
+
+
+def test_partition_lookup_and_duplicate_identity_are_checked():
+    traces = _traces(users=3)
+    partitions = split_traces(traces, group_by="user_id")
+    with pytest.raises(ConfigurationError, match="unknown trace partition"):
+        partitions.traces("validation")
+    with pytest.raises(ConfigurationError, match="disjoint request ids"):
+        TracePartitions(
+            train=(traces[0],),
+            calibration=(traces[0],),
+            test=(traces[4],),
+            seed=17,
+            group_by="user_id",
+            train_fraction=0.6,
+            calibration_fraction=0.2,
+        )
+
+
+def test_split_rejects_empty_input_and_nonstring_group_key():
+    with pytest.raises(ConfigurationError, match="at least one trace"):
+        split_traces(())
+    with pytest.raises(ConfigurationError, match="group_by"):
+        split_traces(_traces(), group_by=3)  # type: ignore[arg-type]
+
+
 def test_writer_rejects_source_output_collision_before_writing(tmp_path) -> None:
     source = tmp_path / "train.jsonl"
     traces = _traces()

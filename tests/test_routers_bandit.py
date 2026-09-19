@@ -139,6 +139,14 @@ def test_linucb_state_round_trip(tmp_path) -> None:
     assert restored.score("a", (1.0, 0.5)) == pytest.approx(policy.score("a", (1.0, 0.5)))
 
 
+def test_linucb_load_normalizes_invalid_utf8_as_persistence_error(tmp_path) -> None:
+    path = tmp_path / "legacy-state.json"
+    path.write_bytes(b"\xff")
+
+    with pytest.raises(PersistenceError, match="Cannot read JSON state"):
+        LinUCBPolicy.load(path)
+
+
 def test_linucb_rejects_invalid_persisted_matrix_shape() -> None:
     payload = LinUCBPolicy(("a",), dimension=2).to_dict()
     payload["arms"]["a"]["inverse_covariance"] = [[1.0]]

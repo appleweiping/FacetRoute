@@ -4,33 +4,18 @@ from __future__ import annotations
 
 import csv
 import html
+import io
 import json
-import os
-import tempfile
-from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
 from .benchmark import BenchmarkReport, IntervalEstimate
 from .calibration import CalibrationReport
+from .persistence import _atomic_write_bytes_bundle, _json_bytes
 
 
 def _atomic_text(path: str | Path, content: str) -> None:
-    destination = Path(path)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(
-        dir=destination.parent, prefix=f".{destination.name}.", suffix=".tmp"
-    )
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as handle:
-            handle.write(content)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary_name, destination)
-    except BaseException:
-        with suppress(OSError):
-            os.unlink(temporary_name)
-        raise
+    _atomic_write_bytes_bundle({Path(path): content.encode("utf-8")})
 
 
 def write_json(path: str | Path, payload: Any) -> None:
@@ -41,8 +26,6 @@ def write_json(path: str | Path, payload: Any) -> None:
 
 
 def write_calibration_csv(path: str | Path, report: CalibrationReport) -> None:
-    import io
-
     output = io.StringIO(newline="")
     fieldnames = list(report.points[0].to_dict())
     writer = csv.DictWriter(output, fieldnames=fieldnames, lineterminator="\n")
@@ -84,14 +67,16 @@ def benchmark_rows(report: BenchmarkReport) -> list[dict[str, Any]]:
 
 
 def write_benchmark_csv(path: str | Path, report: BenchmarkReport) -> None:
-    import io
+    _atomic_text(path, _benchmark_csv(report))
 
+
+def _benchmark_csv(report: BenchmarkReport) -> str:
     rows = benchmark_rows(report)
     output = io.StringIO(newline="")
     writer = csv.DictWriter(output, fieldnames=list(rows[0]), lineterminator="\n")
     writer.writeheader()
     writer.writerows(rows)
-    _atomic_text(path, output.getvalue())
+    return output.getvalue()
 
 
 def _format(value: Any) -> str:
@@ -102,7 +87,7 @@ def _format(value: Any) -> str:
     return str(value)
 
 
-def write_benchmark_html(path: str | Path, report: BenchmarkReport) -> None:
+def _benchmark_html(report: BenchmarkReport) -> str:
     rows = benchmark_rows(report)
     columns = (
         "policy",
@@ -137,9 +122,27 @@ th:first-child,td:first-child{{text-align:left}}th{{background:#eef4ff}}code{{wo
 <table><thead><tr>{header}</tr></thead><tbody>{body}</tbody></table>
 <h2>Reproducibility manifest</h2>
 <p>records: {manifest.records}; seed: {manifest.seed}</p>
-<p>dataset SHA-256: <code>{html.escape(manifest.dataset_sha256)}</code></p>
+<p>dataset canonical SHA-256: <code>{html.escape(manifest.dataset_canonical_sha256)}</code></p>
+<p>dataset file SHA-256: <code>{html.escape(manifest.dataset_file_sha256 or "not supplied")}</code></p>
 <p>catalog SHA-256: <code>{html.escape(manifest.catalog_sha256)}</code></p>
 <p>input SHA-256: <code>{html.escape(json.dumps(dict(manifest.input_sha256), sort_keys=True))}</code></p>
 </body></html>
 """
-    _atomic_text(path, page)
+    return page
+
+
+def write_benchmark_html(path: str | Path, report: BenchmarkReport) -> None:
+    _atomic_text(path, _benchmark_html(report))
+
+
+def write_benchmark_bundle(directory: str | Path, report: BenchmarkReport) -> None:
+    """Render every benchmark artifact before committing the recoverable bundle."""
+
+    destination = Path(directory)
+    _atomic_write_bytes_bundle(
+        {
+            destination / "benchmark.json": _json_bytes(report.to_dict()),
+            destination / "benchmark.csv": _benchmark_csv(report).encode("utf-8"),
+            destination / "benchmark.html": _benchmark_html(report).encode("utf-8"),
+        }
+    )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,8 @@ from ._json import loads_strict
 from .errors import ConfigurationError
 from .rules import RoutingRule
 from .types import ModelCandidate, RouteRequest, UserPreferences
+
+_MAX_CONFIGURATION_BYTES = 16 * 1024 * 1024
 
 
 def _boolean_field(data: Mapping[str, Any], name: str, default: bool) -> bool:
@@ -49,17 +52,30 @@ def _number_field(data: Mapping[str, Any], name: str) -> float | None:
     return float(value)
 
 
-def _read_json(path: str | Path) -> Any:
+def _read_json_with_sha256(
+    path: str | Path, *, max_bytes: int = _MAX_CONFIGURATION_BYTES
+) -> tuple[Any, str]:
+    if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes <= 0:
+        raise ValueError("configuration max_bytes must be a positive integer")
     source = Path(path)
     try:
-        with source.open("r", encoding="utf-8") as handle:
-            return loads_strict(handle.read())
+        with source.open("rb") as handle:
+            raw = handle.read(max_bytes + 1)
     except (OSError, ValueError) as exc:
+        raise ConfigurationError(f"Cannot read JSON configuration {source}: {exc}") from exc
+    if len(raw) > max_bytes:
+        raise ConfigurationError(f"JSON configuration {source} exceeds {max_bytes} bytes")
+    try:
+        return loads_strict(raw), hashlib.sha256(raw).hexdigest()
+    except (UnicodeDecodeError, ValueError, RecursionError) as exc:
         raise ConfigurationError(f"Cannot read JSON configuration {source}: {exc}") from exc
 
 
-def load_models(path: str | Path) -> tuple[ModelCandidate, ...]:
-    payload = _read_json(path)
+def _read_json(path: str | Path) -> Any:
+    return _read_json_with_sha256(path)[0]
+
+
+def _models_from_payload(payload: Any) -> tuple[ModelCandidate, ...]:
     records = payload.get("models", []) if isinstance(payload, dict) else payload
     if not isinstance(records, list):
         raise ConfigurationError("model catalog must be a list or an object with a models list")
@@ -72,10 +88,16 @@ def load_models(path: str | Path) -> tuple[ModelCandidate, ...]:
     return models
 
 
-def load_preferences(path: str | Path | None) -> dict[str, UserPreferences]:
-    if path is None:
-        return {}
-    payload = _read_json(path)
+def load_models(path: str | Path) -> tuple[ModelCandidate, ...]:
+    return _models_from_payload(_read_json(path))
+
+
+def _load_models_with_sha256(path: str | Path) -> tuple[tuple[ModelCandidate, ...], str]:
+    payload, digest = _read_json_with_sha256(path)
+    return _models_from_payload(payload), digest
+
+
+def _preferences_from_payload(payload: Any) -> dict[str, UserPreferences]:
     records = payload.get("profiles", []) if isinstance(payload, dict) else payload
     if not isinstance(records, list):
         raise ConfigurationError("preferences must be a list or an object with a profiles list")
@@ -86,10 +108,20 @@ def load_preferences(path: str | Path | None) -> dict[str, UserPreferences]:
     return result
 
 
-def load_rules(path: str | Path | None) -> tuple[RoutingRule, ...]:
+def load_preferences(path: str | Path | None) -> dict[str, UserPreferences]:
     if path is None:
-        return ()
-    payload = _read_json(path)
+        return {}
+    return _preferences_from_payload(_read_json(path))
+
+
+def _load_preferences_with_sha256(
+    path: str | Path,
+) -> tuple[dict[str, UserPreferences], str]:
+    payload, digest = _read_json_with_sha256(path)
+    return _preferences_from_payload(payload), digest
+
+
+def _rules_from_payload(payload: Any) -> tuple[RoutingRule, ...]:
     records = payload.get("rules", []) if isinstance(payload, dict) else payload
     if not isinstance(records, list):
         raise ConfigurationError("rules must be a list or an object with a rules list")
@@ -98,6 +130,17 @@ def load_rules(path: str | Path | None) -> tuple[RoutingRule, ...]:
     if len(names) != len(set(names)):
         raise ConfigurationError("rules contain duplicate names")
     return rules
+
+
+def load_rules(path: str | Path | None) -> tuple[RoutingRule, ...]:
+    if path is None:
+        return ()
+    return _rules_from_payload(_read_json(path))
+
+
+def _load_rules_with_sha256(path: str | Path) -> tuple[tuple[RoutingRule, ...], str]:
+    payload, digest = _read_json_with_sha256(path)
+    return _rules_from_payload(payload), digest
 
 
 def request_from_dict(data: Mapping[str, Any]) -> RouteRequest:

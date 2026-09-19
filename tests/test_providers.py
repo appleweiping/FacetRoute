@@ -428,3 +428,118 @@ def test_provider_rejects_non_json_forward_payload_before_network():
     provider = OpenAICompatibleProvider("https://provider.example/v1")
     with pytest.raises(ConfigurationError, match="strict JSON"):
         provider.complete({"temperature": float("nan")}, model="upstream", timeout_seconds=1)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        None,
+        {"object": "chat.completion", "id": "ok", "model": 7, "choices": [{}]},
+        {"object": "chat.completion", "id": "", "model": "m", "choices": [{}]},
+        {"object": "chat.completion", "id": "ok", "model": "m", "choices": "bad"},
+        {"object": "chat.completion", "id": "ok", "model": "m", "choices": [1]},
+        {
+            "object": "chat.completion",
+            "id": "ok",
+            "model": "m",
+            "choices": [{}],
+            "bad": float("nan"),
+        },
+    ],
+)
+def test_registry_rejects_malformed_injected_completions(payload):
+    class InjectedProvider:
+        def complete(self, _request, *, model, timeout_seconds):
+            return payload
+
+    registry = ProviderRegistry((ProviderTarget("catalog", "upstream", InjectedProvider()),))
+    with pytest.raises(ProviderError) as raised:
+        registry.complete("catalog", {}, timeout_seconds=1)
+    assert raised.value.failure is ProviderFailure.MALFORMED
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        None,
+        {"object": "chat.completion.chunk", "id": "", "model": "m", "choices": []},
+        {"object": "chat.completion.chunk", "id": "ok", "model": 7, "choices": []},
+        {"object": "chat.completion.chunk", "id": "ok", "model": "m", "choices": 1},
+        {"object": "chat.completion.chunk", "id": "ok", "model": "m", "choices": [1]},
+        {
+            "object": "chat.completion.chunk",
+            "id": "ok",
+            "model": "m",
+            "choices": [],
+            "bad": float("inf"),
+        },
+    ],
+)
+def test_registry_rejects_malformed_injected_stream_chunks(payload):
+    class InjectedProvider:
+        def stream(self, _request, *, model, timeout_seconds):
+            yield payload
+
+    registry = ProviderRegistry((ProviderTarget("catalog", "upstream", InjectedProvider()),))
+    with pytest.raises(ProviderError) as raised:
+        list(registry.stream("catalog", {}, timeout_seconds=1))
+    assert raised.value.failure is ProviderFailure.MALFORMED
+
+
+def test_registry_redacts_timeout_and_stream_cleanup_failure():
+    class TimeoutProvider:
+        def complete(self, _request, *, model, timeout_seconds):
+            raise TimeoutError("secret completion timeout")
+
+        def stream(self, _request, *, model, timeout_seconds):
+            raise TimeoutError("secret stream timeout")
+
+    registry = ProviderRegistry((ProviderTarget("catalog", "upstream", TimeoutProvider()),))
+    with pytest.raises(ProviderError) as complete_error:
+        registry.complete("catalog", {}, timeout_seconds=1)
+    with pytest.raises(ProviderError) as stream_error:
+        registry.stream("catalog", {}, timeout_seconds=1)
+    assert complete_error.value.failure is ProviderFailure.TIMEOUT
+    assert stream_error.value.failure is ProviderFailure.TIMEOUT
+    assert "secret" not in str(complete_error.value) + str(stream_error.value)
+
+    class BrokenIterator:
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            raise StopIteration
+
+        def close(self):
+            raise RuntimeError("secret cleanup failure")
+
+    class CleanupProvider:
+        def stream(self, _request, *, model, timeout_seconds):
+            return BrokenIterator()
+
+    registry = ProviderRegistry((ProviderTarget("catalog", "upstream", CleanupProvider()),))
+    with pytest.raises(ProviderError) as cleanup_error:
+        list(registry.stream("catalog", {}, timeout_seconds=1))
+    assert cleanup_error.value.failure is ProviderFailure.FAILED
+    assert "secret" not in str(cleanup_error.value)
+
+
+@pytest.mark.parametrize("body", [b"data: [DONE]", b"data: \xff\n\n", b"data: []\n\n"])
+def test_provider_rejects_truncated_or_invalid_sse_without_leaking_body(body):
+    with upstream_server(body_override=body) as upstream, pytest.raises(ProviderError) as raised:
+        list(provider_for(upstream).stream({}, model="upstream", timeout_seconds=5))
+    assert raised.value.failure is ProviderFailure.MALFORMED
+    assert "DONE" not in str(raised.value)
+
+
+def test_provider_config_rejects_oversize_and_noncanonical_json(tmp_path):
+    config = tmp_path / "providers.json"
+    config.write_bytes(b" " * (1024 * 1024 + 1))
+    with pytest.raises(ConfigurationError, match="exceeds"):
+        load_provider_registry(config, environment={})
+    config.write_text('{"models":[],"models":[]}', encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="duplicate"):
+        load_provider_registry(config, environment={})
+    config.write_text('{"models":[],"api_key":"literal-secret"}', encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="unknown provider configuration fields"):
+        load_provider_registry(config, environment={})

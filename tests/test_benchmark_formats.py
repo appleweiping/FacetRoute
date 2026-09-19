@@ -165,3 +165,68 @@ def test_canonical_writer_round_trips(tmp_path):
     output = tmp_path / "out.jsonl"
     write_benchmark_examples(output, examples)
     assert load_benchmark_examples(output, format=BenchmarkFormat.MMLU) == examples
+
+
+@pytest.mark.parametrize(
+    ("record", "message"),
+    [
+        ({"format": "unknown", "prompt": "q"}, "unknown benchmark format"),
+        ([{"question": "q", "answer": "a"}, 7], "must be an object"),
+        ({"question": "q", "choices": ["a", 4], "answer": 0}, "choices"),
+        ({"question": "q", "choices": ["a", "b"], "answer": True}, "answer"),
+        ({"format": "mmlu", "prompt": "q", "choices": ["a", "b"]}, "missing answer"),
+        ({"question": "q"}, "cannot detect"),
+        ({"question_id": "q", "turns": []}, "turns"),
+        ({"question_id": "q", "turns": [" "]}, "turns"),
+        ({"question_id": "q", "turns": ["x"], "category": 5}, "category"),
+        (7, "must be an object"),
+    ],
+)
+def test_benchmark_adapter_rejects_malformed_official_records(tmp_path, record, message):
+    source = tmp_path / "bad.json"
+    source.write_text(json.dumps(record), encoding="utf-8")
+    with pytest.raises(ConfigurationError, match=message):
+        load_benchmark_examples(source)
+
+
+def test_benchmark_writer_rejects_empty_and_directory_destination(tmp_path):
+    with pytest.raises(ConfigurationError, match="empty"):
+        write_benchmark_examples(tmp_path / "out.jsonl", ())
+    examples = (BenchmarkExample("id", BenchmarkFormat.GSM8K, "q", answer="a"),)
+    with pytest.raises(ConfigurationError, match="cannot write"):
+        write_benchmark_examples(tmp_path, examples)
+
+
+def test_benchmark_loader_limits_bytes_read_not_only_an_earlier_file_stat(tmp_path, monkeypatch):
+    source = tmp_path / "racing.json"
+    source.write_text(json.dumps({"question": "q" * 300, "answer": "1"}), encoding="utf-8")
+    original_stat = type(source).stat
+
+    class ReportedSize:
+        st_size = 1
+
+    def stale_stat(path, *args, **kwargs):
+        if path == source:
+            return ReportedSize()
+        return original_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(type(source), "stat", stale_stat)
+    with pytest.raises(ConfigurationError, match="exceeds"):
+        load_benchmark_examples(source, max_bytes=100)
+
+
+def test_benchmark_loader_reports_invalid_utf8(tmp_path):
+    source = tmp_path / "bad.jsonl"
+    source.write_bytes(b"\xff")
+    with pytest.raises(ConfigurationError, match="UTF-8"):
+        load_benchmark_examples(source)
+
+
+@pytest.mark.parametrize(
+    "limits", [{"max_bytes": 1.5}, {"max_records": True}, {"max_records": 1.5}]
+)
+def test_benchmark_loader_rejects_noninteger_resource_limits(tmp_path, limits):
+    source = tmp_path / "valid.json"
+    source.write_text('{"question":"q","answer":"1"}', encoding="utf-8")
+    with pytest.raises(ValueError, match="limits"):
+        load_benchmark_examples(source, **limits)

@@ -108,8 +108,9 @@ redacted SSE error object, omits `[DONE]`, and closes the connection.
 - configurable request bytes, active concurrency, socket read timeout, and
   provider response limits;
 - `Content-Length` and JSON content type required; transfer encoding rejected;
-- duplicate keys, non-finite numbers, malformed UTF-8, and unknown fields
-  rejected;
+- duplicate keys, named or exponent-overflow non-finite numbers, malformed
+  UTF-8, unpaired Unicode surrogates, JSON nesting beyond 256 containers, and
+  unknown fields rejected;
 - `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, and an opaque
   request ID on structured responses;
 - access logging disabled so prompts and authorization headers are not emitted;

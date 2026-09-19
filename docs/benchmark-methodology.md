@@ -18,10 +18,12 @@ row. It never estimates a missing outcome or calls a provider.
 
 ## Comparability
 
-Rule, Pareto, and online LinUCB arms receive the identical ordered request
-sequence and shared catalog. LinUCB starts fresh in the CLI and updates only
-after the selected outcome is revealed. Fixed-model baselines intentionally
-ignore constraints; violations are measured instead of hidden.
+Rule, Pareto, online LinUCB/Thompson, and an optional loaded similarity arm
+receive the identical ordered request sequence and shared catalog. The online
+arms start fresh in the CLI and update only after the selected outcome is
+revealed. Similarity is never refit by `benchmark`; its exact artifact digest is
+part of the input manifest. Fixed-model baselines intentionally ignore
+constraints; violations are measured instead of hidden.
 
 Quality regret uses the best observed quality among candidates passing the
 shared hard-constraint engine. An ineligible fixed selection has no regret for
@@ -38,15 +40,22 @@ These intervals quantify resampling variation inside the supplied trace. They
 do not account for biased judges, missing counterfactuals, correlated users,
 temporal drift, or repeated tuning on the same holdout.
 
-Use `split-traces` before examining results. Tune an upstream score model only
-on `train`, choose a threshold only on `calibration`, and report the untouched
-`test` result. If rows from one user, task family, model pair, or source can be
-correlated, select that stable key with `--group-by` rather than accepting the
-request-level default.
+Use `split-traces` before examining results. Fit an upstream score model or
+similarity prototype only on `train`, choose a threshold only on `calibration`,
+and report the untouched `test` result. If rows from one user, task family,
+model pair, or source can be correlated, select that stable key with
+`--group-by` rather than accepting the request-level default.
 
 ## Reproducibility manifest
 
-Every CLI report records the ordered trace byte SHA-256, canonical catalog
-SHA-256, input configuration digests, seed, bootstrap count, confidence level,
-record count, policy names, and installed FacetRoute version. Version reports
-alongside the collection protocol and exact model revisions.
+Every CLI report records `dataset_file_sha256` for the exact trace byte stream
+and `dataset_canonical_sha256` for the canonical parsed records in execution
+order. It also records the canonical catalog SHA-256, input configuration
+digests, seed, bootstrap count, confidence level, record count, policy names,
+and installed FacetRoute version. Version reports alongside the collection
+protocol and exact model revisions. Provenance inputs are parsed and hashed in
+one bounded read/stream, so replacing a path between parsing and a second hash
+cannot produce a manifest for bytes the run did not consume. Output paths are
+checked against every input before any benchmark artifact is written. The
+canonical trace hash preserves row order because online policies consume that
+order; similarity training separately documents its request-ID canonical sort.
