@@ -28,6 +28,12 @@ from .config import (
     request_from_dict,
 )
 from .errors import FacetRouteError
+from .factorization import (
+    FactorizationConfig,
+    FactorizationRouter,
+    PairwiseFactorModel,
+    evaluate_held_out,
+)
 from .feedback import FeedbackEvent, FeedbackLog
 from .persistence import _atomic_write_bytes_bundle, _json_bytes
 from .providers import load_provider_registry
@@ -56,13 +62,14 @@ def _add_catalog_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--rules", help="JSON routing-rule file")
     parser.add_argument(
         "--policy",
-        choices=("rule", "pareto", "linucb", "thompson", "similarity"),
+        choices=("rule", "pareto", "linucb", "thompson", "similarity", "factorization"),
         default="rule",
     )
     parser.add_argument("--state", help="LinUCB JSON state path")
     parser.add_argument(
         "--similarity-model", help="trained similarity JSON state (required for similarity)"
     )
+    parser.add_argument("--factor-model", help="trained pairwise-factorization JSON state")
     parser.add_argument("--alpha", type=float, default=0.35, help="LinUCB exploration factor")
     parser.add_argument(
         "--prior-weight", type=float, default=0.2, help="deterministic prior in LinUCB"
@@ -97,6 +104,7 @@ def _build_router(
     alpha: float,
     prior_weight: float,
     similarity_model_path: str | None,
+    factor_model_path: str | None,
 ) -> Router:
     rules = load_rules(rules_path)
     if policy_name == "rule":
@@ -111,6 +119,17 @@ def _build_router(
         return SimilarityRouter(
             models,
             SimilarityModel.load(similarity_model_path),
+            preferences,
+            rules,
+        )
+    if policy_name == "factorization":
+        if not factor_model_path:
+            raise ValueError("--factor-model is required for --policy factorization")
+        if state_path:
+            raise ValueError("--state is only valid for linucb or thompson")
+        return FactorizationRouter(
+            models,
+            PairwiseFactorModel.load(factor_model_path),
             preferences,
             rules,
         )
@@ -168,6 +187,7 @@ def _run_route(args: argparse.Namespace) -> int:
         args.alpha,
         args.prior_weight,
         args.similarity_model,
+        args.factor_model,
     )
     decision = router.route(_route_request_from_args(args))
     if args.state and isinstance(router, LinUCBRouter):
@@ -188,6 +208,7 @@ def _run_simulate(args: argparse.Namespace) -> int:
         args.alpha,
         args.prior_weight,
         args.similarity_model,
+        args.factor_model,
     )
     requests = load_requests(args.queries)
     log = FeedbackLog(args.feedback_log) if args.feedback_log else None
@@ -352,6 +373,54 @@ def _run_train_similarity(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_train_factorization(args: argparse.Namespace) -> int:
+    _require_disjoint_paths(
+        {
+            "train_traces": args.train_traces,
+            "held_out_traces": args.held_out_traces,
+            "output": args.output,
+            "report": args.report,
+        }
+    )
+    config = FactorizationConfig(
+        dimension=args.dimension,
+        epochs=args.epochs,
+        learning_rate=args.learning_rate,
+        regularization=args.regularization,
+        seed=args.seed,
+        max_records=args.max_records,
+        max_pairs=args.max_pairs,
+        max_features=args.max_features,
+    )
+    training = load_traces(args.train_traces, max_records=config.max_records)
+    model = PairwiseFactorModel.fit(training, config=config)
+    report: dict[str, object] = {
+        "training_sha256": model.encoder.training_sha256,
+        "training_records": len(training),
+        "training_pairs": model.training_pairs,
+        "training_loss": model.final_loss,
+        "routes": list(model.route_ids),
+    }
+    if args.held_out_traces:
+        held_out = load_traces(args.held_out_traces, max_records=config.max_records)
+        report["held_out"] = evaluate_held_out(model, training, held_out, group_by=args.group_by)
+    expected = model.to_dict()
+    writes = {Path(args.output): model._state_bytes()}
+    if args.report:
+        writes[Path(args.report)] = _json_bytes(report)
+
+    def validate_state(staged_path: Path) -> None:
+        if PairwiseFactorModel.load(staged_path).to_dict() != expected:
+            raise ValueError("staged factorization model did not round-trip")
+
+    _atomic_write_bytes_bundle(
+        writes,
+        validators={Path(args.output): validate_state},
+    )
+    print(json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
 def _run_benchmark(args: argparse.Namespace) -> int:
     output = Path(args.output_dir)
     _require_disjoint_paths(
@@ -361,6 +430,7 @@ def _run_benchmark(args: argparse.Namespace) -> int:
             "rules": args.rules,
             "traces": args.traces,
             "similarity_model": args.similarity_model,
+            "factor_model": args.factor_model,
             "output_dir": output,
             "benchmark_json": output / "benchmark.json",
             "benchmark_csv": output / "benchmark.csv",
@@ -381,6 +451,8 @@ def _run_benchmark(args: argparse.Namespace) -> int:
     defaults = ["rule", "pareto", "linucb", "thompson", "fixed"]
     if args.similarity_model:
         defaults.append("similarity")
+    if args.factor_model:
+        defaults.append("factorization")
     selected = set(args.policy or defaults)
     similarity_model: SimilarityModel | None = None
     similarity_model_sha256: str | None = None
@@ -390,6 +462,12 @@ def _run_benchmark(args: argparse.Namespace) -> int:
         similarity_model, similarity_model_sha256 = SimilarityModel.load_with_sha256(
             args.similarity_model
         )
+    factor_model: PairwiseFactorModel | None = None
+    factor_model_sha256: str | None = None
+    if "factorization" in selected:
+        if not args.factor_model:
+            raise ValueError("--factor-model is required for --policy factorization")
+        factor_model, factor_model_sha256 = PairwiseFactorModel.load_with_sha256(args.factor_model)
     if "rule" in selected:
         policies.append(PolicySpec("rule", router=RuleRouter(models, preferences, rules)))
     if "pareto" in selected:
@@ -436,6 +514,15 @@ def _run_benchmark(args: argparse.Namespace) -> int:
                 ),
             )
         )
+    if "factorization" in selected:
+        if factor_model is None:
+            raise ValueError("--factor-model is required for --policy factorization")
+        policies.append(
+            PolicySpec(
+                "factorization",
+                router=FactorizationRouter(models, factor_model, preferences, rules),
+            )
+        )
     fixed_models = args.fixed_model
     if "fixed" in selected and not fixed_models:
         fixed_models = [model.model_id for model in models]
@@ -458,6 +545,8 @@ def _run_benchmark(args: argparse.Namespace) -> int:
         input_digests["rules"] = rules_sha256
     if similarity_model_sha256 is not None:
         input_digests["similarity_model"] = similarity_model_sha256
+    if factor_model_sha256 is not None:
+        input_digests["factor_model"] = factor_model_sha256
     report = runner.run(
         traces,
         policies,
@@ -490,6 +579,7 @@ def _run_serve(args: argparse.Namespace) -> int:
         args.alpha,
         args.prior_weight,
         args.similarity_model,
+        args.factor_model,
     )
     token = os.environ.get(args.token_env) if args.token_env else None
     if not _is_loopback(args.host) and token is None and not args.allow_unauthenticated_nonloopback:
@@ -585,7 +675,7 @@ def build_parser() -> argparse.ArgumentParser:
     feedback.add_argument("--reward", required=True, type=float)
     feedback.add_argument(
         "--policy",
-        choices=("rule", "pareto", "linucb", "thompson", "similarity"),
+        choices=("rule", "pareto", "linucb", "thompson", "similarity", "factorization"),
         required=True,
     )
     feedback.add_argument("--context", help="JSON numeric vector; required for state update")
@@ -673,6 +763,25 @@ def build_parser() -> argparse.ArgumentParser:
     train_similarity.add_argument("--report", help="optional calibration report JSON")
     train_similarity.set_defaults(handler=_run_train_similarity)
 
+    train_factorization = commands.add_parser(
+        "train-factorization",
+        help="fit a deterministic pairwise low-rank router on labelled traces",
+    )
+    train_factorization.add_argument("--train-traces", required=True)
+    train_factorization.add_argument("--held-out-traces")
+    train_factorization.add_argument("--group-by", default="request_id")
+    train_factorization.add_argument("--dimension", type=int, default=8)
+    train_factorization.add_argument("--epochs", type=int, default=30)
+    train_factorization.add_argument("--learning-rate", type=float, default=0.05)
+    train_factorization.add_argument("--regularization", type=float, default=0.0001)
+    train_factorization.add_argument("--seed", type=int, default=17)
+    train_factorization.add_argument("--max-records", type=int, default=10_000)
+    train_factorization.add_argument("--max-pairs", type=int, default=100_000)
+    train_factorization.add_argument("--max-features", type=int, default=512)
+    train_factorization.add_argument("--output", required=True)
+    train_factorization.add_argument("--report")
+    train_factorization.set_defaults(handler=_run_train_factorization)
+
     benchmark = commands.add_parser(
         "benchmark", help="compare routers against observed counterfactual outcomes"
     )
@@ -683,7 +792,7 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument(
         "--policy",
         action="append",
-        choices=("rule", "pareto", "linucb", "thompson", "similarity", "fixed"),
+        choices=("rule", "pareto", "linucb", "thompson", "similarity", "factorization", "fixed"),
         default=[],
         help="policy to include; repeatable (default: all)",
     )
@@ -691,6 +800,7 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--alpha", type=float, default=0.35)
     benchmark.add_argument("--prior-weight", type=float, default=0.2)
     benchmark.add_argument("--similarity-model", help="trained similarity JSON state")
+    benchmark.add_argument("--factor-model", help="trained factorization JSON state")
     benchmark.add_argument("--seed", type=int, default=17)
     benchmark.add_argument("--bootstrap-samples", type=int, default=1000)
     benchmark.add_argument("--confidence", type=float, default=0.95)

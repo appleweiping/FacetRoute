@@ -56,11 +56,17 @@ jobs:
           uv run --locked facetroute split-traces --traces examples/traces.jsonl --output-dir /tmp/split --dataset-name "synthetic fixture" --source-uri "repository:examples/traces.jsonl" --license MIT --seed 8
           uv run --locked facetroute calibrate --traces /tmp/split/calibration.jsonl --held-out-traces /tmp/split/test.jsonl --max-average-cost 0.003 --output /tmp/held-out.json
           uv run --locked facetroute train-similarity --train-traces /tmp/split/train.jsonl --calibration-traces /tmp/split/calibration.jsonl --held-out-traces /tmp/split/test.jsonl --output /tmp/similarity.json --report /tmp/similarity-report.json
+          uv run --locked facetroute train-factorization --train-traces /tmp/split/train.jsonl --held-out-traces /tmp/split/test.jsonl --output /tmp/factor-model.json --report /tmp/factor-report.json
           uv run --locked facetroute route --models examples/models.json --policy similarity --similarity-model /tmp/similarity.json --query "Explain a matrix proof" > /tmp/similarity-decision.json
+          uv run --locked facetroute route --models examples/models.json --policy factorization --factor-model /tmp/factor-model.json --query "Explain a matrix proof" > /tmp/factor-decision.json
           uv run --locked facetroute benchmark --models examples/models.json --preferences examples/preferences.json --rules examples/rules.json --traces /tmp/split/test.jsonl --policy similarity --similarity-model /tmp/similarity.json --bootstrap-samples 100 --output-dir /tmp/benchmark
+          uv run --locked facetroute benchmark --models examples/models.json --preferences examples/preferences.json --rules examples/rules.json --traces /tmp/split/test.jsonl --policy factorization --factor-model /tmp/factor-model.json --bootstrap-samples 100 --output-dir /tmp/factor-benchmark
           test -s /tmp/similarity-report.json
           test -s /tmp/similarity-decision.json
+          test -s /tmp/factor-report.json
+          test -s /tmp/factor-decision.json
           test -s /tmp/benchmark/benchmark.html
+          test -s /tmp/factor-benchmark/benchmark.html
           uv run --locked python - <<'PY'
           import json
           from pathlib import Path
@@ -69,6 +75,9 @@ jobs:
           training = json.loads(Path("/tmp/similarity-report.json").read_text())
           decision = json.loads(Path("/tmp/similarity-decision.json").read_text())
           benchmark = json.loads(Path("/tmp/benchmark/benchmark.json").read_text())
+          factor_training = json.loads(Path("/tmp/factor-report.json").read_text())
+          factor_decision = json.loads(Path("/tmp/factor-decision.json").read_text())
+          factor_benchmark = json.loads(Path("/tmp/factor-benchmark/benchmark.json").read_text())
           held_out = training["held_out"]
           metrics = benchmark["policies"]["similarity"]
           test_path = Path("/tmp/split/test.jsonl")
@@ -85,6 +94,12 @@ jobs:
           assert decision["policy"] == "similarity"
           assert decision["selected_model"] == "marble-reasoner"
           assert decision["feature_summary"]["similarity"]["used"] is True
+          assert factor_training["held_out"]["held_out_records"] == len(test_traces)
+          assert factor_training["held_out"]["training_sha256"] == factor_training["training_sha256"]
+          assert factor_decision["policy"] == "factorization"
+          assert factor_decision["selected_model"] in factor_training["routes"]
+          assert factor_benchmark["policies"]["factorization"]["routed"] == len(test_traces)
+          assert "factor_model" in factor_benchmark["manifest"]["input_sha256"]
           PY
       - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
         run: uv run --locked python -m build --no-isolation

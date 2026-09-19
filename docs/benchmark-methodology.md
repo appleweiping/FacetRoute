@@ -18,11 +18,12 @@ row. It never estimates a missing outcome or calls a provider.
 
 ## Comparability
 
-Rule, Pareto, online LinUCB/Thompson, and an optional loaded similarity arm
+Rule, Pareto, online LinUCB/Thompson, and optional loaded similarity and
+factorization arms
 receive the identical ordered request sequence and shared catalog. The online
 arms start fresh in the CLI and update only after the selected outcome is
-revealed. Similarity is never refit by `benchmark`; its exact artifact digest is
-part of the input manifest. Fixed-model baselines intentionally ignore
+revealed. Similarity and factorization are never refit by `benchmark`; the
+exact artifact digests are part of the input manifest. Fixed-model baselines intentionally ignore
 constraints; violations are measured instead of hidden.
 
 Quality regret uses the best observed quality among candidates passing the
@@ -41,7 +42,8 @@ do not account for biased judges, missing counterfactuals, correlated users,
 temporal drift, or repeated tuning on the same holdout.
 
 Use `split-traces` before examining results. Fit an upstream score model or
-similarity prototype only on `train`, choose a threshold only on `calibration`,
+similarity prototype or factorization weights only on `train`, choose a
+threshold or model hyperparameters only on `calibration`,
 and report the untouched `test` result. If rows from one user, task family,
 model pair, or source can be correlated, select that stable key with
 `--group-by` rather than accepting the request-level default.

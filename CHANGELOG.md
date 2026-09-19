@@ -6,6 +6,31 @@ Notable changes are recorded here. Versions follow semantic versioning.
 
 _No changes yet._
 
+## [0.7.0] - 2026-09-19
+
+### Added
+
+- A deterministic, dependency-free pairwise low-rank router over bounded
+  training-only lexical/request features. Its bilinear route/context scores
+  are trained from preferred-versus-observed route comparisons.
+- `train-factorization` with optional group-disjoint held-out accuracy and
+  pairwise log-loss, plus `--policy factorization` for `route`, `simulate`,
+  `serve`, and counterfactual `benchmark`.
+- Versioned, checksummed, size-bounded factorization state and atomic
+  model/report output with a staged load/round-trip check.
+- Independent hand-calculated bilinear and one-epoch SGD oracles, deterministic
+  order tests, constraint/fallback regression tests, malformed-state and
+  resource-bound tests, and full CLI training-to-benchmark smoke coverage.
+
+### Security and compatibility
+
+- Hard catalog constraints filter before learned logits. Untrained eligible
+  routes remain available through deterministic objective fallback; soft
+  bonuses cannot override a learned score.
+- Reject malformed state, duplicate JSON keys, non-finite factors, oversized
+  artifacts, overlapping train/test groups, and unseen held-out routes. The
+  prior similarity state and policy remain unchanged.
+
 ## [0.6.0] - 2026-09-19
 
 ### Added

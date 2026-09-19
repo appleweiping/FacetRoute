@@ -94,14 +94,16 @@ change preferences; neither can make an ineligible model selectable.
 - **Explainable scoring**: normalized cost and latency utility alongside raw
   task quality, explicit bonuses, ranked alternatives, rejected candidates,
   and human-readable reasons.
-- **Five policies**:
+- **Six policies**:
   - `RuleRouter` applies serializable rules as bounded score bonuses;
   - `ParetoRouter` removes quality/cost/latency-dominated candidates;
   - `LinUCBRouter` learns per-model reward estimates and uncertainty online;
   - `ThompsonRouter` samples from the same persisted linear posterior;
   - `SimilarityRouter` uses a fitted, inspectable TF-IDF route prototype and
     falls back to the deterministic objective below its calibrated threshold.
-- **Local state**: atomic versioned JSON for Bandit/profile/similarity state and
+  - `FactorizationRouter` learns deterministic pairwise route preferences via a
+    bounded low-rank bilinear model over fitted lexical/request features.
+- **Local state**: atomic versioned JSON for Bandit/profile/similarity/factorization state and
   append-only JSONL feedback suitable for inspection and replay.
 - **Strict counterfactual traces**: duplicate-key, non-finite-number,
   non-UTF-8/unpaired-surrogate, and excessive-nesting rejection; stable request
@@ -122,7 +124,7 @@ change preferences; neither can make an ineligible model selectable.
   chunked SSE; injectable providers; environment-only credentials; optional
   bearer authentication; and redacted structured upstream failures.
 - **CLI**: `route`, `simulate`, `feedback`, `report`, `split-traces`, `calibrate`,
-  `train-similarity`, `benchmark`, `normalize-benchmark`, and `serve`.
+  `train-similarity`, `train-factorization`, `benchmark`, `normalize-benchmark`, and `serve`.
 
 ## Install
 
@@ -258,6 +260,19 @@ facetroute route \
   --policy similarity \
   --similarity-model artifacts/similarity-model.json \
   --query "Design edge cases for a parser"
+
+facetroute train-factorization \
+  --train-traces artifacts/split/train.jsonl \
+  --held-out-traces artifacts/split/test.jsonl \
+  --group-by user_id \
+  --output artifacts/factor-model.json \
+  --report artifacts/factor-report.json
+
+facetroute route \
+  --models examples/models.json \
+  --policy factorization \
+  --factor-model artifacts/factor-model.json \
+  --query "Design edge cases for a parser"
 ```
 
 The selected threshold sees only the calibration partition. FacetRoute rejects
@@ -272,6 +287,8 @@ threshold choice, and final evaluation consume train, calibration, and held-out
 partitions respectively, and reject overlap at the same declared group key.
 See [the similarity router contract](docs/similarity-router.md) for the feature
 equations, state schema, limits, fallback behavior, and threat boundary.
+See [the pairwise factorization contract](docs/factorization-router.md) for the
+low-rank objective, deterministic fit, held-out oracle, and routing boundary.
 
 ## Python API
 
@@ -395,22 +412,23 @@ that conflict rejects every candidate instead of weakening the profile.
 
 ## Routing policies
 
-FacetRoute ships five policies. `ParetoRouter`, `LinUCBRouter`, and
-`SimilarityRouter` reuse the rule router's constraint, preference, and
+FacetRoute ships six policies. `ParetoRouter`, `LinUCBRouter`,
+`SimilarityRouter`, and `FactorizationRouter` reuse the rule router's constraint, preference, and
 explanation primitives; `ThompsonRouter` reuses the LinUCB posterior. Every
 policy applies the same `ConstraintEngine` before a learned or deterministic
 preference can choose a model, and each decision records the policy that
 produced it. Select one with
 `--policy rule` (the default), `--policy pareto`, `--policy linucb`, or
-`--policy thompson`, or `--policy similarity` on `route`, `simulate`, and
-`serve`; similarity also requires `--similarity-model`. `benchmark` accepts the
-same five names plus `fixed` for single-model baselines.
+`--policy thompson`, `--policy similarity`, or `--policy factorization` on
+`route`, `simulate`, and `serve`; the learned policies also require their
+`--similarity-model` or `--factor-model` artifact. `benchmark` accepts the
+same six names plus `fixed` for single-model baselines.
 
 Only `linucb` and `thompson` change with online feedback. `rule`, `pareto`, and
-a loaded similarity artifact are deterministic functions of their declared
+a loaded similarity or factorization artifact are deterministic functions of their declared
 inputs.
 
-For a compact comparison, the same request under three of the five policies:
+For a compact comparison, the same request under three of the six policies:
 
 ```bash
 show='import json, sys
@@ -630,8 +648,9 @@ route-score model or policy; FacetRoute does not pretend that a supplied
 
 `benchmark` replays the same ordered traces through rule, Pareto, fresh online
 LinUCB/Thompson, and fixed-candidate policies by default. Supplying
-`--similarity-model` adds the trained similarity policy to that default set, or
-it can be selected explicitly with `--policy similarity`. For each selection
+`--similarity-model` adds the trained similarity policy to that default set;
+`--factor-model` similarly adds the trained factorization policy. Either can
+be selected explicitly with `--policy`. For each selection
 the runner looks up the already observed outcome; it never makes a model call.
 Reports contain:
 

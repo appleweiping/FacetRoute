@@ -22,6 +22,14 @@ from .benchmark_formats import (
 from .calibration import CalibrationPoint, CalibrationReport, ThresholdCalibrator
 from .constraints import ConstraintEngine, ConstraintResult
 from .errors import ConfigurationError, FacetRouteError, NoEligibleModelError, PersistenceError
+from .factorization import (
+    FACTOR_FORMAT,
+    FACTOR_SCHEMA_VERSION,
+    FactorizationConfig,
+    FactorizationRouter,
+    PairwiseFactorModel,
+    evaluate_held_out,
+)
 from .features import CONTEXT_DIMENSION, QueryFeatureExtractor
 from .feedback import FeedbackEvent, FeedbackLog, ModelFeedbackSummary
 from .pareto import dominates, pareto_front
@@ -87,10 +95,12 @@ from .types import (
 try:
     __version__ = version("facetroute")
 except PackageNotFoundError:  # pragma: no cover - source tree without installation
-    __version__ = "0.6.0"
+    __version__ = "0.7.0"
 
 __all__ = [
     "CONTEXT_DIMENSION",
+    "FACTOR_FORMAT",
+    "FACTOR_SCHEMA_VERSION",
     "SIMILARITY_FEATURE_SCHEMA_VERSION",
     "SIMILARITY_FORMAT",
     "SIMILARITY_SCHEMA_VERSION",
@@ -111,6 +121,8 @@ __all__ = [
     "EvaluationReport",
     "FacetRouteError",
     "FacetRouteHTTPServer",
+    "FactorizationConfig",
+    "FactorizationRouter",
     "FeedbackEvent",
     "FeedbackLog",
     "IntervalEstimate",
@@ -122,6 +134,7 @@ __all__ = [
     "NoEligibleModelError",
     "OfflineSimulator",
     "OpenAICompatibleProvider",
+    "PairwiseFactorModel",
     "ParetoRouter",
     "PersistenceError",
     "PolicySpec",
@@ -154,6 +167,7 @@ __all__ = [
     "chat_completion_from_http",
     "create_server",
     "dominates",
+    "evaluate_held_out",
     "file_sha256",
     "fit_calibrate_evaluate",
     "iter_traces",

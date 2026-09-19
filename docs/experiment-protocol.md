@@ -29,7 +29,7 @@ the source file.
 The three roles are intentionally distinct:
 
 - `train` fits an upstream score model, adaptive-policy configuration, or
-  FacetRoute similarity vocabulary and prototypes;
+  FacetRoute similarity vocabulary/prototypes or pairwise factorization weights;
 - `calibration` selects a threshold, cost bound, and other operating point;
 - `test` is opened once for the final comparison.
 
@@ -40,6 +40,10 @@ supplied partitions for overlap at the declared group key, fits only on train,
 selects its coverage-constrained threshold only on calibration, and, when a
 test partition is supplied, evaluates it once. Its model and report retain
 separate partition digests.
+`train-factorization` likewise fits its vocabulary and bilinear weights only
+on `train`. Its optional held-out report audits group disjointness and records
+top-1/pairwise accuracy and log-loss; tune dimension, epochs, and learning
+rate on a separate validation partition before opening the final `test`.
 
 ## 3. Evaluate once
 
