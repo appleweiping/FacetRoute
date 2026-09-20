@@ -27,6 +27,15 @@ from .benchmark_formats import (
     load_benchmark_examples,
     write_benchmark_examples,
 )
+from .benchmark_sweep import (
+    CachedSweep,
+    SweepConfig,
+    SweepPoint,
+    SweepReport,
+    cached_threshold_sweep,
+    load_sweep_traces,
+    run_threshold_sweep,
+)
 from .calibration import CalibrationPoint, CalibrationReport, ThresholdCalibrator
 from .constraints import ConstraintEngine, ConstraintResult
 from .errors import ConfigurationError, FacetRouteError, NoEligibleModelError, PersistenceError
@@ -104,7 +113,7 @@ from .types import (
 try:
     __version__ = version("facetroute")
 except PackageNotFoundError:  # pragma: no cover - source tree without installation
-    __version__ = "0.8.0"
+    __version__ = "0.9.0"
 
 __all__ = [
     "CONTEXT_DIMENSION",
@@ -125,6 +134,7 @@ __all__ = [
     "BenchmarkMetrics",
     "BenchmarkReport",
     "BenchmarkRunner",
+    "CachedSweep",
     "CalibrationPoint",
     "CalibrationReport",
     "ChatCompletionProvider",
@@ -176,11 +186,15 @@ __all__ = [
     "SimilarityModel",
     "SimilarityRouter",
     "SimulationObservation",
+    "SweepConfig",
+    "SweepPoint",
+    "SweepReport",
     "ThresholdCalibrator",
     "TraceOutcome",
     "TracePartitions",
     "UserPreferences",
     "benchmark_rows",
+    "cached_threshold_sweep",
     "chat_completion_from_http",
     "create_server",
     "dominates",
@@ -190,9 +204,11 @@ __all__ = [
     "iter_traces",
     "load_benchmark_examples",
     "load_provider_registry",
+    "load_sweep_traces",
     "load_traces",
     "pareto_front",
     "route_request_from_http",
+    "run_threshold_sweep",
     "split_traces",
     "traces_sha256",
     "write_benchmark_csv",

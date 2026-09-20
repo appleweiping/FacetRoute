@@ -4,6 +4,20 @@ Notable changes are recorded here. Versions follow semantic versioning.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-19
+
+### Added
+
+- `benchmark-sweep` for deterministic strong/weak quality–cost threshold
+  curves over bounded local counterfactual traces, with an independent
+  call-budget quality oracle and Pareto markers.
+- Content-addressed aggregate-only cache keyed by trace, catalog, schema,
+  and configuration hashes, with checksummed strict reads and atomic writes.
+- Extreme finite-cost regression coverage and clean installed-CLI smoke.
+
+This release does not include provider-backed public benchmark scoring or
+claim official MMLU, GSM8K, or MT-Bench parity.
+
 ## [0.8.0] - 2026-09-19
 
 ### Added

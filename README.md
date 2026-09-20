@@ -128,7 +128,8 @@ change preferences; neither can make an ineligible model selectable.
   [provider resilience](docs/provider-resilience.md) for safety boundaries and
   remaining async-transport work.
 - **CLI**: `route`, `simulate`, `feedback`, `report`, `split-traces`, `calibrate`,
-  `train-similarity`, `train-factorization`, `benchmark`, `normalize-benchmark`, and `serve`.
+  `train-similarity`, `train-factorization`, `benchmark`, `benchmark-sweep`,
+  `normalize-benchmark`, and `serve`.
 
 ## Install
 
@@ -649,6 +650,11 @@ route-score model or policy; FacetRoute does not pretend that a supplied
 `route_score` was trained without leakage.
 
 ## Offline benchmark methodology
+
+`benchmark-sweep` adds a deterministic strong/weak quality–cost curve and a
+content-addressed aggregate cache over strict local counterfactual traces.
+It does not claim an official public-benchmark score or call a provider. See
+the [threshold-sweep and cache contract](docs/benchmark-sweep.md).
 
 `benchmark` replays the same ordered traces through rule, Pareto, fresh online
 LinUCB/Thompson, and fixed-candidate policies by default. Supplying

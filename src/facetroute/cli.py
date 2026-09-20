@@ -16,6 +16,12 @@ from ._json import loads_strict
 from .bandit import LinUCBPolicy, LinUCBRouter, ThompsonPolicy, ThompsonRouter
 from .benchmark import BenchmarkRunner, PolicySpec
 from .benchmark_formats import BenchmarkFormat, load_benchmark_examples, write_benchmark_examples
+from .benchmark_sweep import (
+    SweepConfig,
+    cached_threshold_sweep,
+    load_sweep_catalog,
+    load_sweep_traces,
+)
 from .calibration import ThresholdCalibrator
 from .config import (
     _load_models_with_sha256,
@@ -559,6 +565,43 @@ def _run_benchmark(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_benchmark_sweep(args: argparse.Namespace) -> int:
+    _require_disjoint_paths(
+        {
+            "models": args.models,
+            "traces": args.traces,
+            "output": args.output,
+            "cache_dir": args.cache_dir,
+        }
+    )
+    config = SweepConfig(
+        bins=args.bins,
+        thresholds=tuple(args.threshold) if args.threshold is not None else None,
+        max_records=args.max_records,
+        max_input_bytes=args.max_input_bytes,
+        max_line_bytes=args.max_line_bytes,
+    )
+    models, model_digest = load_sweep_catalog(args.models)
+    traces, trace_digest = load_sweep_traces(args.traces, config=config)
+    cached = cached_threshold_sweep(
+        traces,
+        models,
+        args.cache_dir,
+        config=config,
+        trace_file_sha256=trace_digest,
+        model_file_sha256=model_digest,
+        refresh=args.refresh_cache,
+        protected_paths=(args.models, args.traces, args.output),
+    )
+    write_json(args.output, cached.report.to_dict())
+    print(
+        f"swept {len(cached.report.points)} thresholds across "
+        f"{cached.report.manifest['records']} traces "
+        f"({'cache hit' if cached.cache_hit else 'cache miss'}) to {args.output}"
+    )
+    return 0
+
+
 def _is_loopback(host: str) -> bool:
     if host.lower() == "localhost":
         return True
@@ -828,6 +871,23 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--confidence", type=float, default=0.95)
     benchmark.add_argument("--output-dir", required=True)
     benchmark.set_defaults(handler=_run_benchmark)
+
+    sweep = commands.add_parser(
+        "benchmark-sweep", help="sweep strong/weak thresholds on local counterfactual traces"
+    )
+    sweep.add_argument("--models", required=True, help="strict JSON model catalog")
+    sweep.add_argument("--traces", required=True, help="strict JSONL counterfactual traces")
+    sweep.add_argument("--cache-dir", required=True, help="content-addressed aggregate cache")
+    sweep.add_argument("--output", required=True, help="atomic JSON sweep report")
+    sweep.add_argument("--bins", type=int, default=10, help="quantile-grid bins, 1 to 100")
+    sweep.add_argument(
+        "--threshold", type=float, action="append", help="explicit cutoff; repeatable"
+    )
+    sweep.add_argument("--max-records", type=int, default=10_000)
+    sweep.add_argument("--max-input-bytes", type=int, default=32 * 1024 * 1024)
+    sweep.add_argument("--max-line-bytes", type=int, default=64 * 1024)
+    sweep.add_argument("--refresh-cache", action="store_true")
+    sweep.set_defaults(handler=_run_benchmark_sweep)
 
     serve = commands.add_parser(
         "serve", help="serve routing decisions and an optional chat-completions proxy"
