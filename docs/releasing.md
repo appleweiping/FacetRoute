@@ -1,6 +1,6 @@
 # Release process
 
-A push of a semantic-version tag such as `v0.11.0` invokes the release
+A push of a semantic-version tag such as `v0.12.0` invokes the release
 workflow. The workflow refuses a tag that differs from `project.version`,
 installs the committed `uv.lock`, runs the static and coverage-gated suite,
 builds both source and wheel distributions with the locked build backend, and
@@ -16,7 +16,7 @@ Verify a downloaded file with:
 
 ```bash
 sha256sum --check SHA256SUMS
-gh attestation verify facetroute-0.11.0-py3-none-any.whl \
+gh attestation verify facetroute-0.12.0-py3-none-any.whl \
   --repo appleweiping/FacetRoute
 ```
 

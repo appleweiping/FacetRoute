@@ -6,6 +6,17 @@ Notable changes are recorded here. Versions follow semantic versioning.
 
 _No changes yet._
 
+## [0.12.0] - 2026-09-19
+
+### Added
+
+- Separate `facetroute-public-score-live` command for bounded, explicitly
+  acknowledged OpenAI-compatible provider calls against caller-licensed local
+  MMLU/GSM8K data, with environment-only credentials and zero-call default.
+- Loopback HTTP regressions for preflight, resume, cost consent, credentials,
+  endpoint restrictions, and checkpoint secrecy. No external provider is
+  exercised in CI and no official-score equivalence is claimed.
+
 ## [0.11.0] - 2026-09-19
 
 ### Added

@@ -51,6 +51,11 @@ explicit import from `facetroute.async_http`; the default package/CLI remain
 free of HTTPX. API keys belong in application environment/secret storage,
 never in the dataset, source URI, or checkpoint.
 
+A separate [live-provider command](live-provider-profile.md) binds this API to
+two caller-declared OpenAI-compatible HTTP endpoints. It is disabled by
+default, requires an explicit call limit and cost acknowledgement, and does
+not change this Python API's injected-provider semantics.
+
 The workflow preflights every record and prompt before making any call. MMLU
 provider payloads contain the question and labeled choices, but not which
 choice is correct. GSM8K payloads contain the question but never the reference

@@ -121,6 +121,10 @@ change preferences; neither can make an ineligible model selectable.
   source/license/SHA-256 provenance and an atomic, ambiguity-aware resume checkpoint. See
   [public-score workflow](docs/public-score-workflow.md); no official score
   equivalence is claimed.
+- **Opt-in live-provider scoring profile**: a separate command connects the
+  public-score workflow to explicit OpenAI-compatible endpoints. It defaults
+  to zero calls and requires a bounded call count plus cost acknowledgement;
+  see [live-provider profile](docs/live-provider-profile.md).
 - **Portable reports**: deterministic JSON, analysis-ready CSV, and a
   standalone HTML table with an embedded reproducibility manifest.
 - **Decision and execution service**: standard-library `/health`, `/v1/models`,

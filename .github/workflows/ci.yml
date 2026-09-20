@@ -111,5 +111,28 @@ jobs:
           .ci-wheel-check/bin/python -c "import facetroute; print(facetroute.__version__)"
           .ci-wheel-check/bin/python -c "from facetroute import AsyncRoutingController, AsyncProviderRegistry, ProviderResiliencePolicy, ResilientProviderRegistry; print('provider client imports ok')"
           .ci-wheel-check/bin/python -c "from facetroute.public_scores import PublicScoreLimits, run_public_scores; assert PublicScoreLimits().max_records == 1000; assert callable(run_public_scores)"
+          .ci-wheel-check/bin/facetroute-public-score-live --help | grep -- --acknowledge-cost
+          .ci-wheel-check/bin/python - <<'PY'
+          import asyncio
+          import hashlib
+          import importlib.util
+          import tempfile
+          from pathlib import Path
+          from facetroute.live_profile import LiveProfile, LiveProvider, run_live_profile
+          from facetroute.public_scores import PublicScoreProvenance
+          assert importlib.util.find_spec("httpx") is None
+          with tempfile.TemporaryDirectory() as directory:
+              source = Path(directory) / "source.jsonl"
+              raw = b'{"id":"m1","question":"Pick A","choices":["A","B"],"answer":0,"subject":"demo"}\n'
+              source.write_bytes(raw)
+              profile = LiveProfile(
+                  source, Path(directory) / "checkpoint.json",
+                  PublicScoreProvenance("fixture:wheel-preflight", "CC-BY-4.0", hashlib.sha256(raw).hexdigest()),
+                  LiveProvider("weak", "upstream-a", "revision-1", "https://weak.example.org/v1", "WEAK_KEY"),
+                  LiveProvider("strong", "upstream-b", "revision-1", "https://strong.example.org/v1", "STRONG_KEY"),
+              )
+              progress = asyncio.run(run_live_profile(profile, environment={}))
+              assert progress.completed_calls == 0 and progress.total_calls == 2
+          PY
           .ci-wheel-check/bin/facetroute --help
           .ci-wheel-check/bin/facetroute serve --help | grep -- --provider-resilience
