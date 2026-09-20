@@ -71,6 +71,7 @@ from .mmlu_preparation import (
     prepare_mmlu_csv,
     verify_mmlu_csv_preparation,
 )
+from .mmlu_suite import MMLUSuiteSource, PreparedMMLUSuite, prepare_mmlu_suite, verify_mmlu_suite
 from .pareto import dominates, pareto_front
 from .profiles import PreferenceStore
 from .providers import (
@@ -135,7 +136,7 @@ from .types import (
 try:
     __version__ = version("facetroute")
 except PackageNotFoundError:  # pragma: no cover - source tree without installation
-    __version__ = "0.17.0"
+    __version__ = "0.18.0"
 
 __all__ = [
     "CONTEXT_DIMENSION",
@@ -178,6 +179,7 @@ __all__ = [
     "LinUCBPolicy",
     "LinUCBRouter",
     "MMLUCSVPreparationPlan",
+    "MMLUSuiteSource",
     "ModelCandidate",
     "ModelFeedbackSummary",
     "MultiObjectiveScorer",
@@ -191,6 +193,7 @@ __all__ = [
     "PreferenceStore",
     "PreparedGSM8KJSONL",
     "PreparedMMLUCSV",
+    "PreparedMMLUSuite",
     "ProviderError",
     "ProviderFailure",
     "ProviderRegistry",
@@ -241,12 +244,14 @@ __all__ = [
     "plan_contamination_exclusions",
     "prepare_gsm8k_jsonl",
     "prepare_mmlu_csv",
+    "prepare_mmlu_suite",
     "route_request_from_http",
     "run_threshold_sweep",
     "split_traces",
     "traces_sha256",
     "verify_gsm8k_jsonl_preparation",
     "verify_mmlu_csv_preparation",
+    "verify_mmlu_suite",
     "write_benchmark_csv",
     "write_benchmark_examples",
     "write_benchmark_html",

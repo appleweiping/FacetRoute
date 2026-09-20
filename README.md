@@ -122,6 +122,10 @@ change preferences; neither can make an ineligible model selectable.
   [offline preparation protocol](docs/mmlu-csv-preparation.md) includes a tiny
   synthetic example; it neither downloads licensed data nor reproduces an
   official MMLU score or tokenizer protocol.
+- **Many-subject MMLU-shaped suite**: compose up to 64 separately pinned
+  dev/test subject pairs into one deterministic, private-gold artifact with
+  cross-subject leakage checks and replayable aggregate evidence. See the
+  [suite guide](docs/mmlu-suite.md); no official data or score is bundled.
 - **Caller-owned GSM8K-shaped JSONL preparation**: pin separate train/test
   byte snapshots, use only training answers in bounded worked examples, and
   replay source and per-prompt hashes before injected-provider scoring. The
@@ -271,6 +275,9 @@ offline few-shot JSONL input for the opt-in public-score workflow. It requires
 exact source SHA-256 pins and declared license/source URIs; see the
 [MMLU CSV preparation guide](docs/mmlu-csv-preparation.md). The output includes
 test gold answers for local scoring and must be kept private.
+For multiple subjects, `facetroute-mmlu-suite --manifest
+examples/mmlu_csv/suite-demo.json --output prepared-suite.jsonl` composes the
+same protocol in canonical subject order; see the [suite guide](docs/mmlu-suite.md).
 
 For an actual experiment, split before inspecting metrics and keep related rows
 together. The command records declared provenance, exact source bytes, the split

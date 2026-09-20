@@ -1,0 +1,28 @@
+{
+  "subjects": [
+    {
+      "subject": "demo_history",
+      "dev": "demo_history_dev.csv",
+      "test": "demo_history_test.csv",
+      "dev_sha256": "05c4054c11895a086e0a87558aab2fa7602687a5d67cc9e0013ecd0b40f82d4d",
+      "test_sha256": "b0b14566fc348be018d587b634b3ed87afb9001d9912fff77071754b97650fd7",
+      "dev_source_uri": "repository:examples/mmlu_csv/demo_history_dev.csv",
+      "test_source_uri": "repository:examples/mmlu_csv/demo_history_test.csv",
+      "license": "MIT",
+      "shots": 1,
+      "max_prompt_bytes": 8192
+    },
+    {
+      "subject": "demo_math",
+      "dev": "demo_math_dev.csv",
+      "test": "demo_math_test.csv",
+      "dev_sha256": "60812464d52bd3c5b379d48956ab903e9bab3cd239375f8c0dc3cbe4c4a19082",
+      "test_sha256": "33ac8df529bf4b1d3b36b8fa25cdadd5b297f419b1751a1dfdaa3abf45fa02fa",
+      "dev_source_uri": "repository:examples/mmlu_csv/demo_math_dev.csv",
+      "test_source_uri": "repository:examples/mmlu_csv/demo_math_test.csv",
+      "license": "MIT",
+      "shots": 2,
+      "max_prompt_bytes": 8192
+    }
+  ]
+}

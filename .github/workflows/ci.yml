@@ -84,6 +84,39 @@ jobs:
           PY
       - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
         run: |
+          uv run --locked facetroute-mmlu-suite \
+            --manifest examples/mmlu_csv/suite-demo.json \
+            --output /tmp/facet-mmlu-suite.jsonl > /tmp/facet-mmlu-suite-evidence.json
+          uv run --locked python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+          from facetroute import MMLUCSVPreparationPlan, MMLUSuiteSource, prepare_mmlu_suite
+          from facetroute.public_scores import PublicScoreProvenance
+          root = Path('examples/mmlu_csv')
+          manifest = (root / 'suite-demo.json').read_bytes()
+          sources = []
+          for item in json.loads(manifest)['subjects']:
+              dev = (root / item['dev']).read_bytes()
+              test = (root / item['test']).read_bytes()
+              plan = MMLUCSVPreparationPlan(
+                  item['subject'],
+                  PublicScoreProvenance(item['dev_source_uri'], item['license'], hashlib.sha256(dev).hexdigest()),
+                  PublicScoreProvenance(item['test_source_uri'], item['license'], hashlib.sha256(test).hexdigest()),
+                  requested_shots=item['shots'],
+                  max_prompt_bytes=item['max_prompt_bytes'],
+              )
+              sources.append(MMLUSuiteSource(plan, dev, test))
+          artifact = Path('/tmp/facet-mmlu-suite.jsonl').read_bytes()
+          evidence = json.loads(Path('/tmp/facet-mmlu-suite-evidence.json').read_bytes())
+          assert evidence['manifest_sha256'] == hashlib.sha256(manifest).hexdigest()
+          prepared = prepare_mmlu_suite(sources)
+          assert artifact == prepared.benchmark_jsonl()
+          assert evidence['suite'] == json.loads(prepared.evidence_json())
+          assert evidence['suite']['records'] == 2
+          PY
+      - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
+        run: |
           uv run --locked facetroute-gsm8k-prepare \
             --train examples/gsm8k_jsonl/demo_train.jsonl \
             --test examples/gsm8k_jsonl/demo_test.jsonl \
@@ -175,6 +208,7 @@ jobs:
           .ci-wheel-check/bin/python -c "from facetroute.public_scores import PublicScoreLimits, run_public_scores; assert PublicScoreLimits().max_records == 1000; assert callable(run_public_scores)"
           .ci-wheel-check/bin/facetroute-public-score-live --help | grep -- --acknowledge-cost
           .ci-wheel-check/bin/facetroute-mmlu-prepare --help | grep -- --dev-sha256
+          .ci-wheel-check/bin/facetroute-mmlu-suite --help | grep -- --manifest
           .ci-wheel-check/bin/facetroute-gsm8k-prepare --help | grep -- --train-sha256
           .ci-wheel-check/bin/facetroute-contamination-audit --help | grep -- --training
           .ci-wheel-check/bin/facetroute-contamination-exclusions \

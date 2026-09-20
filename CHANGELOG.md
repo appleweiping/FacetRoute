@@ -6,6 +6,17 @@ Notable changes are recorded here. Versions follow semantic versioning.
 
 _No changes yet._
 
+## [0.18.0] - 2026-09-20
+
+### Added
+
+- Bounded, offline MMLU-shaped multi-subject CSV composition from caller-owned
+  SHA-pinned sources. The deterministic suite artifact preserves separate
+  subject few-shot context, rejects normalized cross-subject dev/test leakage,
+  and emits replayable aggregate provenance without prompts or gold answers.
+  A strict manifest CLI publishes create-only JSONL. This is not an official
+  MMLU score or a claim of complete RouteLLM evaluation parity.
+
 ## [0.17.0] - 2026-09-20
 
 ### Added
