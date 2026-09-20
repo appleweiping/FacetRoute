@@ -59,6 +59,12 @@ from .factorization import (
 )
 from .features import CONTEXT_DIMENSION, QueryFeatureExtractor
 from .feedback import FeedbackEvent, FeedbackLog, ModelFeedbackSummary
+from .mmlu_preparation import (
+    MMLUCSVPreparationPlan,
+    PreparedMMLUCSV,
+    prepare_mmlu_csv,
+    verify_mmlu_csv_preparation,
+)
 from .pareto import dominates, pareto_front
 from .profiles import PreferenceStore
 from .providers import (
@@ -123,7 +129,7 @@ from .types import (
 try:
     __version__ = version("facetroute")
 except PackageNotFoundError:  # pragma: no cover - source tree without installation
-    __version__ = "0.15.0"
+    __version__ = "0.16.0"
 
 __all__ = [
     "CONTEXT_DIMENSION",
@@ -164,6 +170,7 @@ __all__ = [
     "IntervalEstimate",
     "LinUCBPolicy",
     "LinUCBRouter",
+    "MMLUCSVPreparationPlan",
     "ModelCandidate",
     "ModelFeedbackSummary",
     "MultiObjectiveScorer",
@@ -175,6 +182,7 @@ __all__ = [
     "PersistenceError",
     "PolicySpec",
     "PreferenceStore",
+    "PreparedMMLUCSV",
     "ProviderError",
     "ProviderFailure",
     "ProviderRegistry",
@@ -223,10 +231,12 @@ __all__ = [
     "load_traces",
     "pareto_front",
     "plan_contamination_exclusions",
+    "prepare_mmlu_csv",
     "route_request_from_http",
     "run_threshold_sweep",
     "split_traces",
     "traces_sha256",
+    "verify_mmlu_csv_preparation",
     "write_benchmark_csv",
     "write_benchmark_examples",
     "write_benchmark_html",

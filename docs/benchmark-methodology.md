@@ -17,6 +17,12 @@ can generate and score weak/strong responses for MMLU or GSM8K through injected
 async providers. It never changes what `normalize-benchmark` does and does not
 claim official benchmark parity.
 
+The [caller-owned MMLU CSV preparation](mmlu-csv-preparation.md) is a separate
+offline adapter: it selects dev-only few-shot examples under a provider-prompt
+byte limit, emits JSONL compatible with that public-score workflow, and keeps
+test reference answers out of provider payloads. Its byte budget is not a
+tokenizer budget and it does not recreate a published MMLU evaluation protocol.
+
 FacetRoute performs counterfactual replay: a policy selects a model for each
 request, and the runner retrieves that model's outcome from the same trace
 row. It never estimates a missing outcome or calls a provider.

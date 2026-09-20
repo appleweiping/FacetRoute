@@ -116,6 +116,12 @@ change preferences; neither can make an ineligible model selectable.
 - **Benchmark format adapters**: strict, offline normalization for the public
   MMLU, GSM8K, and MT-Bench JSON/JSONL record shapes. Answers remain separate
   from the routing prompt, and every normalized request receives a stable ID.
+- **Caller-owned MMLU CSV preparation**: pin a subject's dev/test CSV byte
+  snapshots, create bounded deterministic few-shot JSONL for the existing
+  public-score workflow, and record replayable aggregate provenance. The
+  [offline preparation protocol](docs/mmlu-csv-preparation.md) includes a tiny
+  synthetic example; it neither downloads licensed data nor reproduces an
+  official MMLU score or tokenizer protocol.
 - **Opt-in public-score generation**: MMLU/GSM8K weak/strong calls through
   injectable async providers with bounded stored completion text, explicit
   source/license/SHA-256 provenance and an atomic, ambiguity-aware resume checkpoint. See
@@ -252,6 +258,13 @@ canonical JSONL with a reproducible `format:id` request key. The answer is kept
 in the normalized record for an evaluator, but is never concatenated into the
 request query; model scoring and quality outcomes must still be supplied by a
 separate, explicitly hashed trace.
+
+For caller-owned, headerless MMLU-shaped `<subject>_dev.csv` and
+`<subject>_test.csv`, `facetroute-mmlu-prepare` can instead construct an
+offline few-shot JSONL input for the opt-in public-score workflow. It requires
+exact source SHA-256 pins and declared license/source URIs; see the
+[MMLU CSV preparation guide](docs/mmlu-csv-preparation.md). The output includes
+test gold answers for local scoring and must be kept private.
 
 For an actual experiment, split before inspecting metrics and keep related rows
 together. The command records declared provenance, exact source bytes, the split

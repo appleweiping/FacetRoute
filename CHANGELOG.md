@@ -6,6 +6,15 @@ Notable changes are recorded here. Versions follow semantic versioning.
 
 _No changes yet._
 
+## [0.16.0] - 2026-09-20
+
+### Added
+
+- Offline, caller-pinned MMLU-shaped dev/test CSV preparation with deterministic
+  bounded few-shot context, byte-budget backoff, replayable aggregate evidence,
+  a create-only CLI, and compatibility with the existing injected-provider
+  public-score workflow. Synthetic fixtures only; no official-score parity.
+
 ## [0.15.0] - 2026-09-20
 
 ### Added

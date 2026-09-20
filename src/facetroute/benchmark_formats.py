@@ -37,12 +37,25 @@ class BenchmarkExample:
     answer: int | str | None = None
     category: str | None = None
     turns: tuple[str, ...] = ()
+    few_shot_context: str | None = None
 
     def __post_init__(self) -> None:
         if not self.example_id.strip():
             raise ConfigurationError("benchmark example_id cannot be empty")
         if not self.prompt.strip():
             raise ConfigurationError("benchmark prompt cannot be empty")
+        if self.few_shot_context is not None and (
+            self.format is not BenchmarkFormat.MMLU
+            or type(self.few_shot_context) is not str
+            or not self.few_shot_context.strip()
+        ):
+            raise ConfigurationError("few_shot_context requires bounded MMLU text")
+        if self.few_shot_context is not None:
+            try:
+                if len(self.few_shot_context.encode("utf-8", "strict")) > 32 * 1024:
+                    raise ConfigurationError("few_shot_context exceeds 32 KiB")
+            except UnicodeError:
+                raise ConfigurationError("few_shot_context must be strict UTF-8") from None
         if self.format is BenchmarkFormat.MMLU:
             if len(self.choices) < 2:
                 raise ConfigurationError("MMLU examples require at least two choices")
@@ -101,6 +114,8 @@ class BenchmarkExample:
             result["category"] = self.category
         if self.turns:
             result["turns"] = list(self.turns)
+        if self.few_shot_context is not None:
+            result["few_shot_context"] = self.few_shot_context
         return result
 
 
@@ -142,6 +157,10 @@ def _parse_record(
     format_name = _format_for(raw, requested)
     try:
         if format_name is BenchmarkFormat.MMLU:
+            subject = raw.get("subject")
+            category = raw.get("category")
+            if subject is not None and category is not None and subject != category:
+                raise ConfigurationError("MMLU subject and category disagree")
             choices_raw = raw["choices"]
             if not isinstance(choices_raw, list) or not all(
                 isinstance(choice, str) and choice.strip() for choice in choices_raw
@@ -157,10 +176,11 @@ def _parse_record(
                 choices=tuple(choice.strip() for choice in choices_raw),
                 answer=answer,
                 category=(
-                    _string(raw["subject"], "MMLU subject")
-                    if raw.get("subject") is not None
+                    _string(subject if subject is not None else category, "MMLU subject")
+                    if subject is not None or category is not None
                     else None
                 ),
+                few_shot_context=raw.get("few_shot_context"),
             )
         if format_name is BenchmarkFormat.GSM8K:
             return BenchmarkExample(
