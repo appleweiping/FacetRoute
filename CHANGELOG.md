@@ -16,6 +16,8 @@ _No changes yet._
   zero-hit screening. This does not prove data leakage or official-score parity.
 - Reject hard-linked training/evaluation files as one physical input to the
   underlying similarity screen.
+- Keep a successfully linked exclusion output usable if temporary-file cleanup
+  subsequently fails; document the trusted-directory concurrency boundary.
 
 ## [0.14.0] - 2026-09-20
 

@@ -78,7 +78,10 @@ facetroute-contamination-exclusions \
 ```
 
 The command creates `exclusions.jsonl` only if it does not exist; it never
-overwrites an existing path. Standard output is one evidence JSON line with
+overwrites an existing path. Use a trusted local output directory that other
+users cannot rename or modify during the operation; the command does not
+claim safety against a hostile concurrent filesystem actor. Standard output
+is one evidence JSON line with
 the exact source, training, evaluation, and exclusion-file SHA-256 digests,
 declared encoder identity, threshold, comparison-work count, and matched and
 excluded record counts. It contains no prompts, answers, or vectors. Duplicate

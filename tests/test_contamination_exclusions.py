@@ -8,7 +8,7 @@ import pytest
 
 from facetroute import contamination_exclusions as linking
 from facetroute import plan_contamination_exclusions
-from facetroute.contamination_exclusions_cli import main
+from facetroute.contamination_exclusions_cli import _create_only, main
 from facetroute.errors import ConfigurationError
 
 
@@ -128,6 +128,25 @@ def test_cli_create_only_and_no_mutation(tmp_path: Path, capfd: pytest.CaptureFi
     assert main(argv) == 2
     assert "already exists" in capfd.readouterr().err
     assert inputs == tuple(path.read_bytes() for path in (source, training, evaluation))
+
+
+def test_cleanup_failure_does_not_hide_successful_create_only_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "exclusions.jsonl"
+    original_unlink = Path.unlink
+
+    def failing_unlink(path: Path, *args: object, **kwargs: object) -> None:
+        if path.name.endswith(".tmp"):
+            raise OSError("injected temporary cleanup failure")
+        original_unlink(path, *args, **kwargs)  # type: ignore[arg-type]
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "unlink", failing_unlink)
+        _create_only(target, b'{"prompt_sha256":"abc"}\n')
+    assert target.read_bytes() == b'{"prompt_sha256":"abc"}\n'
+    for staged in tmp_path.glob(".exclusions.jsonl.*.tmp"):
+        staged.unlink()
 
 
 @pytest.mark.parametrize("problem", ["same-path", "mt-bench", "too-large"])

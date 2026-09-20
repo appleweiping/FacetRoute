@@ -7,6 +7,7 @@ import os
 import sys
 import tempfile
 from collections.abc import Sequence
+from contextlib import suppress
 from pathlib import Path
 
 from .contamination_exclusions import plan_contamination_exclusions
@@ -36,9 +37,11 @@ def _create_only(path: Path, content: bytes) -> None:
         raise ConfigurationError("cannot create exclusion output") from None
     finally:
         if descriptor >= 0:
-            os.close(descriptor)
+            with suppress(OSError):
+                os.close(descriptor)
         if temporary is not None:
-            temporary.unlink(missing_ok=True)
+            with suppress(OSError):
+                temporary.unlink(missing_ok=True)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
