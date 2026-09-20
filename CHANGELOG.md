@@ -4,6 +4,23 @@ Notable changes are recorded here. Versions follow semantic versioning.
 
 ## [Unreleased]
 
+_No changes yet._
+
+## [0.11.0] - 2026-09-19
+
+### Added
+
+- Opt-in, injected-provider MMLU/GSM8K response generation and scoring from
+  caller-supplied licensed local data, with exact source hashes, answer-free
+  prompts, explicit model revisions, and deterministic score checks.
+- Bounded, checksummed, resumable checkpoints with pre-send pending markers,
+  conservative ambiguous-retry semantics, private temporary files, POSIX
+  directory sync, and adversarial corruption/cancellation tests.
+
+This is a transparent local protocol, not official public-score parity or a
+live-provider CI profile; provider endpoints and model weights are declared
+by the caller rather than independently verified.
+
 ## [0.10.0] - 2026-09-19
 
 ### Added

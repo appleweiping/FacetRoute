@@ -12,6 +12,11 @@ The canonical JSONL output keeps the reference answer outside the generated
 answer leakage. The resulting request ID is stable (`format:example-id`) and
 can be joined to a separately hashed counterfactual trace.
 
+The separate, opt-in [provider-backed public-score workflow](public-score-workflow.md)
+can generate and score weak/strong responses for MMLU or GSM8K through injected
+async providers. It never changes what `normalize-benchmark` does and does not
+claim official benchmark parity.
+
 FacetRoute performs counterfactual replay: a policy selects a model for each
 request, and the runner retrieves that model's outcome from the same trace
 row. It never estimates a missing outcome or calls a provider.

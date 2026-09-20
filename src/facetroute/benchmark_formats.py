@@ -202,15 +202,7 @@ def _records(payload: object) -> list[object]:
     raise ConfigurationError("benchmark input must be a JSON array/object or JSONL")
 
 
-def load_benchmark_examples(
-    path: str | Path,
-    *,
-    format: BenchmarkFormat | str = "auto",
-    max_bytes: int = 128 * 1024 * 1024,
-    max_records: int = 1_000_000,
-) -> tuple[BenchmarkExample, ...]:
-    """Load MMLU, GSM8K, or MT-Bench JSON/JSONL with strict limits."""
-
+def _validate_limits(max_bytes: int, max_records: int) -> None:
     if (
         isinstance(max_bytes, bool)
         or not isinstance(max_bytes, int)
@@ -220,18 +212,15 @@ def load_benchmark_examples(
         or max_records <= 0
     ):
         raise ValueError("benchmark limits must be positive")
-    source = Path(path)
-    try:
-        with source.open("rb") as handle:
-            raw = handle.read(max_bytes + 1)
-    except OSError as exc:
-        raise ConfigurationError(f"cannot read benchmark input {source}: {exc}") from exc
-    if len(raw) > max_bytes:
-        raise ConfigurationError(f"benchmark input exceeds {max_bytes} bytes")
+
+
+def _examples_from_bytes(
+    raw: bytes, *, source_name: str, format: BenchmarkFormat | str, max_records: int
+) -> tuple[BenchmarkExample, ...]:
     try:
         text = raw.decode("utf-8", "strict")
     except UnicodeDecodeError as exc:
-        raise ConfigurationError(f"invalid benchmark UTF-8 in {source}: {exc}") from exc
+        raise ConfigurationError(f"invalid benchmark UTF-8 in {source_name}: {exc}") from exc
     try:
         try:
             payload = loads_strict(text)
@@ -242,7 +231,7 @@ def load_benchmark_examples(
                 if line.strip():
                     raw_records.append(loads_strict(line))
     except (ValueError, json.JSONDecodeError) as exc:
-        raise ConfigurationError(f"invalid benchmark JSON in {source}: {exc}") from exc
+        raise ConfigurationError(f"invalid benchmark JSON in {source_name}: {exc}") from exc
     if not raw_records:
         raise ConfigurationError("benchmark input contains no records")
     if len(raw_records) > max_records:
@@ -255,6 +244,46 @@ def load_benchmark_examples(
     if len(formats) != 1:
         raise ConfigurationError("benchmark input cannot mix MMLU, GSM8K, and MT-Bench records")
     return examples
+
+
+def load_benchmark_examples_bytes(
+    raw: bytes,
+    *,
+    format: BenchmarkFormat | str = "auto",
+    max_bytes: int = 128 * 1024 * 1024,
+    max_records: int = 1_000_000,
+) -> tuple[BenchmarkExample, ...]:
+    """Parse one already-read byte snapshot under the same strict adapter rules."""
+
+    _validate_limits(max_bytes, max_records)
+    if not isinstance(raw, bytes):
+        raise ConfigurationError("benchmark byte snapshot must be bytes")
+    if len(raw) > max_bytes:
+        raise ConfigurationError(f"benchmark input exceeds {max_bytes} bytes")
+    return _examples_from_bytes(raw, source_name="<bytes>", format=format, max_records=max_records)
+
+
+def load_benchmark_examples(
+    path: str | Path,
+    *,
+    format: BenchmarkFormat | str = "auto",
+    max_bytes: int = 128 * 1024 * 1024,
+    max_records: int = 1_000_000,
+) -> tuple[BenchmarkExample, ...]:
+    """Load MMLU, GSM8K, or MT-Bench JSON/JSONL with strict limits."""
+
+    _validate_limits(max_bytes, max_records)
+    source = Path(path)
+    try:
+        with source.open("rb") as handle:
+            raw = handle.read(max_bytes + 1)
+    except OSError as exc:
+        raise ConfigurationError(f"cannot read benchmark input {source}: {exc}") from exc
+    if len(raw) > max_bytes:
+        raise ConfigurationError(f"benchmark input exceeds {max_bytes} bytes")
+    return _examples_from_bytes(
+        raw, source_name=str(source), format=format, max_records=max_records
+    )
 
 
 def write_benchmark_examples(path: str | Path, examples: tuple[BenchmarkExample, ...]) -> None:

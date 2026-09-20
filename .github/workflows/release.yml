@@ -60,6 +60,7 @@ jobs:
           python -m venv .release-wheel-check
           .release-wheel-check/bin/python -m pip install --disable-pip-version-check --no-deps dist/*.whl
           .release-wheel-check/bin/python -c "import facetroute; assert facetroute.__version__ == '${GITHUB_REF_NAME#v}'"
+          .release-wheel-check/bin/python -c "from facetroute.public_scores import PublicScoreLimits, run_public_scores; assert PublicScoreLimits().max_records == 1000; assert callable(run_public_scores)"
           .release-wheel-check/bin/facetroute --version
       - name: Verify the source distribution in a clean environment
         shell: bash
@@ -67,6 +68,7 @@ jobs:
           python -m venv .release-sdist-check
           .release-sdist-check/bin/python -m pip install --disable-pip-version-check --no-deps dist/*.tar.gz
           .release-sdist-check/bin/python -c "import facetroute; assert facetroute.__version__ == '${GITHUB_REF_NAME#v}'"
+          .release-sdist-check/bin/python -c "from facetroute.public_scores import PublicScoreLimits, run_public_scores; assert PublicScoreLimits().max_records == 1000; assert callable(run_public_scores)"
           .release-sdist-check/bin/facetroute --version
       - name: Generate runtime dependency SBOM
         shell: bash

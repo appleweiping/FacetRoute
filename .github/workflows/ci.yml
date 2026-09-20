@@ -110,5 +110,6 @@ jobs:
           .ci-wheel-check/bin/python -m pip install --disable-pip-version-check --no-deps dist/*.whl
           .ci-wheel-check/bin/python -c "import facetroute; print(facetroute.__version__)"
           .ci-wheel-check/bin/python -c "from facetroute import AsyncRoutingController, AsyncProviderRegistry, ProviderResiliencePolicy, ResilientProviderRegistry; print('provider client imports ok')"
+          .ci-wheel-check/bin/python -c "from facetroute.public_scores import PublicScoreLimits, run_public_scores; assert PublicScoreLimits().max_records == 1000; assert callable(run_public_scores)"
           .ci-wheel-check/bin/facetroute --help
           .ci-wheel-check/bin/facetroute serve --help | grep -- --provider-resilience

@@ -116,6 +116,11 @@ change preferences; neither can make an ineligible model selectable.
 - **Benchmark format adapters**: strict, offline normalization for the public
   MMLU, GSM8K, and MT-Bench JSON/JSONL record shapes. Answers remain separate
   from the routing prompt, and every normalized request receives a stable ID.
+- **Opt-in public-score generation**: MMLU/GSM8K weak/strong calls through
+  injectable async providers with bounded stored completion text, explicit
+  source/license/SHA-256 provenance and an atomic, ambiguity-aware resume checkpoint. See
+  [public-score workflow](docs/public-score-workflow.md); no official score
+  equivalence is claimed.
 - **Portable reports**: deterministic JSON, analysis-ready CSV, and a
   standalone HTML table with an embedded reproducibility manifest.
 - **Decision and execution service**: standard-library `/health`, `/v1/models`,
