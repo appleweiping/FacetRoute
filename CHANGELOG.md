@@ -6,6 +6,14 @@ Notable changes are recorded here. Versions follow semantic versioning.
 
 _No changes yet._
 
+## [0.14.0] - 2026-09-20
+
+### Added
+
+- Bounded, offline training/evaluation embedding-similarity contamination
+  audit with strict source schemas, exact hashes, independent cosine oracles,
+  and no provider calls or raw prompt output.
+
 ## [0.13.0] - 2026-09-19
 
 ### Added

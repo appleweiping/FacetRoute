@@ -112,6 +112,7 @@ jobs:
           .ci-wheel-check/bin/python -c "from facetroute import AsyncRoutingController, AsyncProviderRegistry, ProviderResiliencePolicy, ResilientProviderRegistry; print('provider client imports ok')"
           .ci-wheel-check/bin/python -c "from facetroute.public_scores import PublicScoreLimits, run_public_scores; assert PublicScoreLimits().max_records == 1000; assert callable(run_public_scores)"
           .ci-wheel-check/bin/facetroute-public-score-live --help | grep -- --acknowledge-cost
+          .ci-wheel-check/bin/facetroute-contamination-audit --help | grep -- --training
           .ci-wheel-check/bin/python - <<'PY'
           import asyncio
           import hashlib

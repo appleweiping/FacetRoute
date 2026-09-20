@@ -1,0 +1,10 @@
+{
+  "schema": "facet-embedding-set-v1",
+  "model_id": "synthetic-fixture-encoder",
+  "model_revision": "r1",
+  "dimension": 2,
+  "records": [
+    {"id": "eval-alpha", "embedding": [3, 4]},
+    {"id": "eval-beta", "embedding": [-1, 0]}
+  ]
+}

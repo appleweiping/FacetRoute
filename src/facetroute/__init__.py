@@ -38,6 +38,12 @@ from .benchmark_sweep import (
 )
 from .calibration import CalibrationPoint, CalibrationReport, ThresholdCalibrator
 from .constraints import ConstraintEngine, ConstraintResult
+from .contamination import (
+    ContaminationHit,
+    ContaminationReport,
+    audit_contamination,
+    contamination_json,
+)
 from .errors import ConfigurationError, FacetRouteError, NoEligibleModelError, PersistenceError
 from .factorization import (
     FACTOR_FORMAT,
@@ -113,7 +119,7 @@ from .types import (
 try:
     __version__ = version("facetroute")
 except PackageNotFoundError:  # pragma: no cover - source tree without installation
-    __version__ = "0.13.0"
+    __version__ = "0.14.0"
 
 __all__ = [
     "CONTEXT_DIMENSION",
@@ -141,6 +147,8 @@ __all__ = [
     "ConfigurationError",
     "ConstraintEngine",
     "ConstraintResult",
+    "ContaminationHit",
+    "ContaminationReport",
     "EvaluationReport",
     "FacetRouteError",
     "FacetRouteHTTPServer",
@@ -193,9 +201,11 @@ __all__ = [
     "TraceOutcome",
     "TracePartitions",
     "UserPreferences",
+    "audit_contamination",
     "benchmark_rows",
     "cached_threshold_sweep",
     "chat_completion_from_http",
+    "contamination_json",
     "create_server",
     "dominates",
     "evaluate_held_out",

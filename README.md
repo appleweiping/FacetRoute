@@ -130,6 +130,11 @@ change preferences; neither can make an ineligible model selectable.
   and a fixed-call oracle without publishing prompts or model responses. See
   [the bounded audit protocol](docs/public-score-audit.md); this is not an
   official leaderboard reproduction.
+- **Offline contamination-similarity audit**: compare caller-supplied training
+  and evaluation embeddings under the same declared encoder, with exact input
+  hashes, explicit work limits, and an ID-only nearest-neighbor report. See
+  [the similarity protocol](docs/contamination-audit.md); high cosine similarity
+  is a review signal, not proof that a benchmark leaked into training.
 - **Portable reports**: deterministic JSON, analysis-ready CSV, and a
   standalone HTML table with an embedded reproducibility manifest.
 - **Decision and execution service**: standard-library `/health`, `/v1/models`,
