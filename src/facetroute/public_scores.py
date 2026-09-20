@@ -14,6 +14,7 @@ import math
 import os
 import re
 import stat
+import sys
 import uuid
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
@@ -344,14 +345,14 @@ def _locked(path: Path) -> Iterator[None]:
     try:
         os.lseek(descriptor, 0, os.SEEK_SET)
         try:
-            if os.name == "nt":
+            if sys.platform == "win32":
                 import msvcrt
 
                 msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
             else:
                 import fcntl
 
-                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)  # type: ignore[attr-defined]
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
             acquired = True
         except OSError:
             raise ConfigurationError("public-score checkpoint is already in use") from None
@@ -359,7 +360,7 @@ def _locked(path: Path) -> Iterator[None]:
     finally:
         try:
             if acquired:
-                if os.name == "nt":
+                if sys.platform == "win32":
                     import msvcrt
 
                     os.lseek(descriptor, 0, os.SEEK_SET)
@@ -367,7 +368,7 @@ def _locked(path: Path) -> Iterator[None]:
                 else:
                     import fcntl
 
-                    fcntl.flock(descriptor, fcntl.LOCK_UN)  # type: ignore[attr-defined]
+                    fcntl.flock(descriptor, fcntl.LOCK_UN)
         finally:
             os.close(descriptor)
 
