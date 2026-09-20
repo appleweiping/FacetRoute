@@ -30,11 +30,13 @@ facetroute-gsm8k-prepare \
 
 Both source URI and license are **caller declarations**, not verified
 authenticity or legal determinations. Treat the prepared JSONL as private: it
-contains test gold labels and train demonstration answers. The aggregate
-evidence contains source/artifact hashes, row and selected-shot counts, and
-answer-free provider-prompt hashes, but no raw questions or answers. Preserve
-the original source bytes and evidence to replay with
-`verify_gsm8k_jsonl_preparation`; hashes are not digital signatures.
+contains test gold labels and train demonstration answers. The evidence
+contains source/artifact hashes, row and selected-shot counts, and **per-prompt**
+hashes, but no raw questions or answers. These digests do not guarantee privacy:
+someone with candidate questions or prompts can test guesses against them.
+Review the evidence before sharing it. Preserve the original source bytes and
+evidence to replay with `verify_gsm8k_jsonl_preparation`; hashes are not digital
+signatures.
 
 The first requested train rows become worked Q/A demonstrations. If any test
 prompt exceeds the declared byte budget, preparation removes the last

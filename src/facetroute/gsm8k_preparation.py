@@ -176,7 +176,7 @@ def _examples(rows: tuple[_Row, ...], context: str | None) -> tuple[BenchmarkExa
 
 @dataclass(frozen=True, slots=True)
 class PreparedGSM8KJSONL:
-    """Private JSONL and aggregate-only evidence from pinned byte snapshots."""
+    """Private JSONL and replay evidence, including per-prompt digests."""
 
     plan: GSM8KJSONLPreparationPlan
     train_rows: int
@@ -194,7 +194,7 @@ class PreparedGSM8KJSONL:
         return raw
 
     def evidence_json(self) -> bytes:
-        """Return replayable aggregate digests without question or answer text."""
+        """Return replay digests without raw text; hashes do not guarantee privacy."""
         report = {
             "protocol": PROTOCOL,
             "plan": self.plan.to_dict(),
@@ -222,6 +222,10 @@ def prepare_gsm8k_jsonl(
         raise ConfigurationError("GSM8K preparation requires an explicit plan")
     if type(train_source) is not bytes or type(test_source) is not bytes:
         raise ConfigurationError("GSM8K sources must be immutable byte snapshots")
+    if len(train_source) > MAX_SOURCE_BYTES or len(test_source) > MAX_SOURCE_BYTES:
+        raise ConfigurationError(
+            f"GSM8K source must be a byte snapshot within {MAX_SOURCE_BYTES} bytes"
+        )
     if (
         _sha(train_source) != plan.train.source_sha256
         or _sha(test_source) != plan.test.source_sha256

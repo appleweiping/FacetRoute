@@ -224,6 +224,22 @@ def test_hash_budget_type_and_replay_guards() -> None:
         verify_gsm8k_jsonl_preparation("not bytes", prepared.evidence_json(), TRAIN, TEST, _plan())
 
 
+@pytest.mark.parametrize("oversized_train", [True, False])
+def test_direct_api_rejects_oversized_source_before_hash(
+    monkeypatch: pytest.MonkeyPatch, oversized_train: bool
+) -> None:
+    plan = _plan()
+    oversized = b"x" * (preparation.MAX_SOURCE_BYTES + 1)
+
+    def unexpected_hash(_raw: bytes) -> str:
+        pytest.fail("oversized source reached SHA-256")
+
+    monkeypatch.setattr(preparation, "_sha", unexpected_hash)
+    train, test = (oversized, TEST) if oversized_train else (TRAIN, oversized)
+    with pytest.raises(ConfigurationError, match="byte snapshot"):
+        prepare_gsm8k_jsonl(train, test, plan)
+
+
 def test_bom_empty_rows_line_count_fields_and_output_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     for source, reason in (
         (b"\xef\xbb\xbf" + TRAIN, "BOM"),

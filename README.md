@@ -124,7 +124,7 @@ change preferences; neither can make an ineligible model selectable.
   official MMLU score or tokenizer protocol.
 - **Caller-owned GSM8K-shaped JSONL preparation**: pin separate train/test
   byte snapshots, use only training answers in bounded worked examples, and
-  replay aggregate hashes before injected-provider scoring. The
+  replay source and per-prompt hashes before injected-provider scoring. The
   [GSM8K preparation protocol](docs/gsm8k-jsonl-preparation.md) includes a
   fictional fixture and an answer-perturbation oracle; no official prompt or
   score parity is claimed.
