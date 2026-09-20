@@ -24,9 +24,11 @@ Each UTF-8 JSON file is a `facet-embedding-set-v1` object:
 
 The training and evaluation files use the same schema. IDs are short ASCII
 tokens and must be unique within a file. Do not put prompt text or personal
-information in IDs. Vectors must be finite and nonzero. For a self-contained
-smoke, save the object above as `train.json`; create `eval.json` with the same
-metadata and `[{"id":"eval-1","embedding":[1,0]}]` as its `records` value.
+information in IDs. The two paths must refer to distinct physical files,
+including when hard links are used. Vectors must be finite and nonzero. For a
+self-contained smoke, save the object above as `train.json`; create `eval.json`
+with the same metadata and `[{"id":"eval-1","embedding":[1,0]}]` as its
+`records` value.
 Then run:
 
 ```bash

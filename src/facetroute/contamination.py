@@ -158,7 +158,11 @@ def audit_contamination(
     if not math.isfinite(cutoff) or not -1 <= cutoff <= 1:
         raise ConfigurationError("threshold must be a finite number between -1 and 1")
     try:
-        same_path = Path(training_path).resolve() == Path(evaluation_path).resolve()
+        training_file = Path(training_path)
+        evaluation_file = Path(evaluation_path)
+        same_path = training_file.resolve() == evaluation_file.resolve()
+        if not same_path and training_file.exists() and evaluation_file.exists():
+            same_path = training_file.samefile(evaluation_file)
     except (OSError, RuntimeError) as exc:
         raise ConfigurationError("cannot resolve embedding paths") from exc
     if same_path:

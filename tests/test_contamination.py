@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -189,3 +190,15 @@ def test_training_input_is_not_mutated(tmp_path: Path) -> None:
     _set(evaluation, [("q", [0, 1])])
     audit_contamination(train, evaluation)
     assert train.read_bytes() == original
+
+
+def test_hard_linked_training_and_evaluation_are_not_independent(tmp_path: Path) -> None:
+    training = tmp_path / "training.json"
+    alias = tmp_path / "evaluation-alias.json"
+    _set(training, [("a", [1, 0])])
+    try:
+        os.link(training, alias)
+    except OSError:
+        pytest.skip("filesystem does not support hard links")
+    with pytest.raises(ConfigurationError, match="must differ"):
+        audit_contamination(training, alias)
