@@ -113,6 +113,20 @@ jobs:
           .ci-wheel-check/bin/python -c "from facetroute.public_scores import PublicScoreLimits, run_public_scores; assert PublicScoreLimits().max_records == 1000; assert callable(run_public_scores)"
           .ci-wheel-check/bin/facetroute-public-score-live --help | grep -- --acknowledge-cost
           .ci-wheel-check/bin/facetroute-contamination-audit --help | grep -- --training
+          .ci-wheel-check/bin/facetroute-contamination-exclusions \
+            --source examples/contamination-questions.jsonl \
+            --training examples/contamination-train.json \
+            --evaluation examples/contamination-eval.json \
+            --output /tmp/facet-exclusions.jsonl > /tmp/facet-exclusion-evidence.json
+          .ci-wheel-check/bin/python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+          evidence = json.loads(Path('/tmp/facet-exclusion-evidence.json').read_text())
+          raw = Path('/tmp/facet-exclusions.jsonl').read_bytes()
+          assert evidence['exclusions_sha256'] == hashlib.sha256(raw).hexdigest()
+          assert evidence['matched_embedding_records'] == 1
+          PY
           .ci-wheel-check/bin/python - <<'PY'
           import asyncio
           import hashlib

@@ -6,6 +6,15 @@ Notable changes are recorded here. Versions follow semantic versioning.
 
 _No changes yet._
 
+## [0.15.0] - 2026-09-20
+
+### Added
+
+- Offline, exact-ID-joined conversion from declared embedding-similarity hits
+  to prompt-digest exclusions for the public-score audit, with source/input/
+  output hashes, create-only CLI output, no raw prompt disclosure, and explicit
+  zero-hit screening. This does not prove data leakage or official-score parity.
+
 ## [0.14.0] - 2026-09-20
 
 ### Added

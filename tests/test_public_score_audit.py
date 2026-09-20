@@ -182,6 +182,16 @@ def test_exclusion_is_pinned_by_normalized_prompt_digest(tmp_path: Path) -> None
         audit_public_scores(source, checkpoint, scores, exclusions_path=exclusions)
 
 
+def test_explicit_empty_exclusion_file_is_pinned(tmp_path: Path) -> None:
+    source, checkpoint, scores, _, _ = _fixture(tmp_path)
+    exclusions = tmp_path / "screened-no-hits.jsonl"
+    exclusions.write_bytes(b"")
+    report = audit_public_scores(source, checkpoint, scores, exclusions_path=exclusions)
+    assert report.manifest["excluded_records"] == 0
+    assert report.manifest["evaluated_records"] == 3
+    assert report.manifest["exclusions_file_sha256"] == hashlib.sha256(b"").hexdigest()
+
+
 def test_incomplete_and_corrupt_checkpoints_fail_closed(tmp_path: Path) -> None:
     source, checkpoint, scores, _, _ = _fixture(tmp_path, complete=False)
     with pytest.raises(ConfigurationError, match="completed"):

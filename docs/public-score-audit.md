@@ -34,6 +34,11 @@ define, license, and justify the comparison corpus and digest-production
 method. The exclusions file's exact SHA-256 is included in the report. Omitting
 it means **no decontamination**. Supplying exclusions and scores post hoc can
 bias a comparison; register and pin them before examining outcomes.
+The [offline similarity screen](contamination-audit.md#link-screened-ids-to-public-score-exclusions)
+can create this file from declared train/evaluation embeddings after an exact
+source-ID join; its evidence is a screening record, not proof of leakage.
+An explicitly supplied empty file is valid and its empty-byte digest is pinned
+in the audit report.
 
 ```bash
 facetroute-public-score-audit \

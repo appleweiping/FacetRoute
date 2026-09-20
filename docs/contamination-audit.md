@@ -55,3 +55,36 @@ It checks `training_count * evaluation_count * dimension <= 100 million`
 before any pairwise comparisons. It does not issue network calls or mutate
 inputs. Large reference-scale experiments need an explicitly designed
 streaming/indexed path rather than silently bypassing this memory/work bound.
+
+## Link screened IDs to public-score exclusions
+
+The separate `facetroute-contamination-exclusions` command joins **every**
+evaluation embedding ID to a normalized MMLU/GSM8K source ID and writes the
+prompt-digest JSONL understood by `facetroute-public-score-audit`. This is
+useful only if the caller can justify that those vectors actually encode the
+named prompts. Equal IDs, model labels, and dimensions are declarations, not
+cryptographic proof of a trustworthy encoder or training corpus.
+
+The committed example is wholly synthetic:
+
+```bash
+facetroute-contamination-exclusions \
+  --source examples/contamination-questions.jsonl \
+  --training examples/contamination-train.json \
+  --evaluation examples/contamination-eval.json \
+  --output exclusions.jsonl
+```
+
+The command creates `exclusions.jsonl` only if it does not exist; it never
+overwrites an existing path. Standard output is one evidence JSON line with
+the exact source, training, evaluation, and exclusion-file SHA-256 digests,
+declared encoder identity, threshold, comparison-work count, and matched and
+excluded record counts. It contains no prompts, answers, or vectors. Duplicate
+normalized prompts share one digest: one flagged ID excludes **all** source
+rows with that same prompt, and the reported excluded count reflects this.
+The source and evaluation ID sets must match exactly. An explicit zero-hit
+screen produces an empty, hash-pinned exclusion file, which the public-score
+audit accepts. Preserve the evidence line alongside the source and embedding
+provenance before examining weak/strong outcomes; post-hoc choices can bias
+the comparison. This still does not reproduce an official benchmark
+contamination protocol or prove training-set leakage.

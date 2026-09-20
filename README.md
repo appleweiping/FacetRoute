@@ -132,7 +132,8 @@ change preferences; neither can make an ineligible model selectable.
   official leaderboard reproduction.
 - **Offline contamination-similarity audit**: compare caller-supplied training
   and evaluation embeddings under the same declared encoder, with exact input
-  hashes, explicit work limits, and an ID-only nearest-neighbor report. See
+  hashes, explicit work limits, an ID-only nearest-neighbor report, and an
+  exact-ID-joined prompt-digest exclusion file for the public-score audit. See
   [the similarity protocol](docs/contamination-audit.md); high cosine similarity
   is a review signal, not proof that a benchmark leaked into training.
 - **Portable reports**: deterministic JSON, analysis-ready CSV, and a

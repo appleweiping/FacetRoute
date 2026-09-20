@@ -44,6 +44,10 @@ from .contamination import (
     audit_contamination,
     contamination_json,
 )
+from .contamination_exclusions import (
+    ContaminationExclusionPlan,
+    plan_contamination_exclusions,
+)
 from .errors import ConfigurationError, FacetRouteError, NoEligibleModelError, PersistenceError
 from .factorization import (
     FACTOR_FORMAT,
@@ -119,7 +123,7 @@ from .types import (
 try:
     __version__ = version("facetroute")
 except PackageNotFoundError:  # pragma: no cover - source tree without installation
-    __version__ = "0.14.0"
+    __version__ = "0.15.0"
 
 __all__ = [
     "CONTEXT_DIMENSION",
@@ -147,6 +151,7 @@ __all__ = [
     "ConfigurationError",
     "ConstraintEngine",
     "ConstraintResult",
+    "ContaminationExclusionPlan",
     "ContaminationHit",
     "ContaminationReport",
     "EvaluationReport",
@@ -217,6 +222,7 @@ __all__ = [
     "load_sweep_traces",
     "load_traces",
     "pareto_front",
+    "plan_contamination_exclusions",
     "route_request_from_http",
     "run_threshold_sweep",
     "split_traces",

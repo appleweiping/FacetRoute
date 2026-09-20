@@ -224,6 +224,10 @@ def _scores(raw: bytes, examples: tuple[BenchmarkExample, ...]) -> dict[str, flo
 
 
 def _exclusions(raw: bytes, examples: tuple[BenchmarkExample, ...]) -> set[str]:
+    # An explicitly pinned empty file records that the declared screening
+    # protocol found no exclusions; the route-score JSONL remains non-empty.
+    if not raw:
+        return set()
     parsed = _jsonl(raw, "public-score exclusions", len(examples), _MAX_EXCLUSION_LINE_BYTES)
     hashes = set()
     for item in parsed:
