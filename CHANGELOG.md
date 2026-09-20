@@ -6,6 +6,16 @@ Notable changes are recorded here. Versions follow semantic versioning.
 
 _No changes yet._
 
+## [0.13.0] - 2026-09-19
+
+### Added
+
+- Read-only `facetroute-public-score-audit` command for completed MMLU/GSM8K
+  response checkpoints, with strict source/score/exclusion provenance and
+  aggregate-only weak/strong baselines, threshold curves, per-category scores,
+  and fixed-call outcome oracle. It makes no provider calls or official
+  benchmark-parity claim.
+
 ## [0.12.0] - 2026-09-19
 
 ### Added

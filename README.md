@@ -125,6 +125,11 @@ change preferences; neither can make an ineligible model selectable.
   public-score workflow to explicit OpenAI-compatible endpoints. It defaults
   to zero calls and requires a bounded call count plus cost acknowledgement;
   see [live-provider profile](docs/live-provider-profile.md).
+- **Offline public-score audit**: verify a completed checkpoint and compare
+  caller-supplied router scores against weak/strong outcomes, threshold curves,
+  and a fixed-call oracle without publishing prompts or model responses. See
+  [the bounded audit protocol](docs/public-score-audit.md); this is not an
+  official leaderboard reproduction.
 - **Portable reports**: deterministic JSON, analysis-ready CSV, and a
   standalone HTML table with an embedded reproducibility manifest.
 - **Decision and execution service**: standard-library `/health`, `/v1/models`,
