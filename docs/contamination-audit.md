@@ -1,10 +1,9 @@
 # Offline contamination-similarity audit
 
 `facetroute-contamination-audit` checks whether each evaluation embedding has
-a high-cosine-similarity neighbor in a declared training set. This covers the
-*local similarity-checking outcome* of the frozen RouteLLM contamination tool;
-it does not generate embeddings, use an OpenAI service, download benchmark
-data, or prove training-set leakage. The caller must lawfully obtain and
+a high-cosine-similarity neighbor in a declared training set. It does not
+generate embeddings, use an OpenAI service, download benchmark data, or prove
+training-set leakage. The caller must lawfully obtain and
 encode both prompt sets with the **same** model and revision. The audit checks
 the declaration and dimensions, not the external encoder's true identity.
 
