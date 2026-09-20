@@ -122,6 +122,12 @@ change preferences; neither can make an ineligible model selectable.
   [offline preparation protocol](docs/mmlu-csv-preparation.md) includes a tiny
   synthetic example; it neither downloads licensed data nor reproduces an
   official MMLU score or tokenizer protocol.
+- **Caller-owned GSM8K-shaped JSONL preparation**: pin separate train/test
+  byte snapshots, use only training answers in bounded worked examples, and
+  replay aggregate hashes before injected-provider scoring. The
+  [GSM8K preparation protocol](docs/gsm8k-jsonl-preparation.md) includes a
+  fictional fixture and an answer-perturbation oracle; no official prompt or
+  score parity is claimed.
 - **Opt-in public-score generation**: MMLU/GSM8K weak/strong calls through
   injectable async providers with bounded stored completion text, explicit
   source/license/SHA-256 provenance and an atomic, ambiguity-aware resume checkpoint. See

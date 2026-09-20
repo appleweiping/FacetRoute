@@ -199,7 +199,10 @@ def _prompt(example: BenchmarkExample) -> tuple[str, int]:
     if example.format is BenchmarkFormat.GSM8K:
         if _number(str(example.answer)) is None:
             raise ConfigurationError("GSM8K reference answer must contain a finite decimal number")
-        return f"Question: {example.prompt}\nGive the final number after ####.", 256
+        question = f"Question: {example.prompt}\nGive the final number after ####."
+        if example.few_shot_context is not None:
+            question = f"{example.few_shot_context}\n\n{question}"
+        return question, 256
     raise ConfigurationError("public-score generation supports only MMLU and GSM8K")
 
 

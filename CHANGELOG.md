@@ -6,6 +6,17 @@ Notable changes are recorded here. Versions follow semantic versioning.
 
 _No changes yet._
 
+## [0.17.0] - 2026-09-20
+
+### Added
+
+- Offline, caller-pinned GSM8K-shaped train/test JSONL preparation with
+  deterministic bounded few-shot context, exact source and prompt hashes,
+  create-only output, replay verification, and injected-provider checkpoint/
+  audit smoke. Held-out answers never enter requests; existing zero-shot
+  requests are unchanged. Fictional fixtures only; no official-score or
+  external-provider parity.
+
 ## [0.16.0] - 2026-09-20
 
 ### Added

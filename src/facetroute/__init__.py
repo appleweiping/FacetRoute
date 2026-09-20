@@ -59,6 +59,12 @@ from .factorization import (
 )
 from .features import CONTEXT_DIMENSION, QueryFeatureExtractor
 from .feedback import FeedbackEvent, FeedbackLog, ModelFeedbackSummary
+from .gsm8k_preparation import (
+    GSM8KJSONLPreparationPlan,
+    PreparedGSM8KJSONL,
+    prepare_gsm8k_jsonl,
+    verify_gsm8k_jsonl_preparation,
+)
 from .mmlu_preparation import (
     MMLUCSVPreparationPlan,
     PreparedMMLUCSV,
@@ -129,7 +135,7 @@ from .types import (
 try:
     __version__ = version("facetroute")
 except PackageNotFoundError:  # pragma: no cover - source tree without installation
-    __version__ = "0.16.0"
+    __version__ = "0.17.0"
 
 __all__ = [
     "CONTEXT_DIMENSION",
@@ -167,6 +173,7 @@ __all__ = [
     "FactorizationRouter",
     "FeedbackEvent",
     "FeedbackLog",
+    "GSM8KJSONLPreparationPlan",
     "IntervalEstimate",
     "LinUCBPolicy",
     "LinUCBRouter",
@@ -182,6 +189,7 @@ __all__ = [
     "PersistenceError",
     "PolicySpec",
     "PreferenceStore",
+    "PreparedGSM8KJSONL",
     "PreparedMMLUCSV",
     "ProviderError",
     "ProviderFailure",
@@ -231,11 +239,13 @@ __all__ = [
     "load_traces",
     "pareto_front",
     "plan_contamination_exclusions",
+    "prepare_gsm8k_jsonl",
     "prepare_mmlu_csv",
     "route_request_from_http",
     "run_threshold_sweep",
     "split_traces",
     "traces_sha256",
+    "verify_gsm8k_jsonl_preparation",
     "verify_mmlu_csv_preparation",
     "write_benchmark_csv",
     "write_benchmark_examples",

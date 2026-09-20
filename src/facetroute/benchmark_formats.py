@@ -45,11 +45,11 @@ class BenchmarkExample:
         if not self.prompt.strip():
             raise ConfigurationError("benchmark prompt cannot be empty")
         if self.few_shot_context is not None and (
-            self.format is not BenchmarkFormat.MMLU
+            self.format not in {BenchmarkFormat.MMLU, BenchmarkFormat.GSM8K}
             or type(self.few_shot_context) is not str
             or not self.few_shot_context.strip()
         ):
-            raise ConfigurationError("few_shot_context requires bounded MMLU text")
+            raise ConfigurationError("few_shot_context requires bounded MMLU or GSM8K text")
         if self.few_shot_context is not None:
             try:
                 if len(self.few_shot_context.encode("utf-8", "strict")) > 32 * 1024:
@@ -188,6 +188,7 @@ def _parse_record(
                 format=format_name,
                 prompt=_string(raw.get("question", raw.get("prompt")), "GSM8K question"),
                 answer=_string(raw["answer"], "GSM8K answer"),
+                few_shot_context=raw.get("few_shot_context"),
             )
         turns_raw = raw.get("turns")
         if (

@@ -84,6 +84,36 @@ jobs:
           PY
       - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
         run: |
+          uv run --locked facetroute-gsm8k-prepare \
+            --train examples/gsm8k_jsonl/demo_train.jsonl \
+            --test examples/gsm8k_jsonl/demo_test.jsonl \
+            --train-sha256 17b17cf9b3ba412b9fc3100f224cc1970eb5670f73477183caeb891194af328b \
+            --test-sha256 580469ea87331b36d023b6f54161909991d96eb2fa0578244f7ff485492c5ac1 \
+            --train-source-uri repository:examples/gsm8k_jsonl/demo_train.jsonl \
+            --test-source-uri repository:examples/gsm8k_jsonl/demo_test.jsonl \
+            --license MIT --shots 2 --max-prompt-bytes 8192 \
+            --output /tmp/facet-prepared-gsm8k.jsonl > /tmp/facet-gsm8k-evidence.json
+          uv run --locked python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+          from facetroute import GSM8KJSONLPreparationPlan, verify_gsm8k_jsonl_preparation
+          from facetroute.public_scores import PublicScoreProvenance
+          root = Path('examples/gsm8k_jsonl')
+          train = (root / 'demo_train.jsonl').read_bytes()
+          test = (root / 'demo_test.jsonl').read_bytes()
+          plan = GSM8KJSONLPreparationPlan(
+              PublicScoreProvenance('repository:examples/gsm8k_jsonl/demo_train.jsonl', 'MIT', hashlib.sha256(train).hexdigest()),
+              PublicScoreProvenance('repository:examples/gsm8k_jsonl/demo_test.jsonl', 'MIT', hashlib.sha256(test).hexdigest()),
+              requested_shots=2,
+          )
+          artifact = Path('/tmp/facet-prepared-gsm8k.jsonl').read_bytes()
+          evidence = Path('/tmp/facet-gsm8k-evidence.json').read_bytes()
+          assert verify_gsm8k_jsonl_preparation(artifact, evidence, train, test, plan)
+          assert json.loads(evidence)['selected_shots'] == 2
+          PY
+      - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
+        run: |
           uv run --locked facetroute calibrate --traces examples/traces.jsonl --max-average-cost 0.003 --output /tmp/calibration.json --csv /tmp/calibration.csv
           uv run --locked facetroute split-traces --traces examples/traces.jsonl --output-dir /tmp/split --dataset-name "synthetic fixture" --source-uri "repository:examples/traces.jsonl" --license MIT --seed 8
           uv run --locked facetroute calibrate --traces /tmp/split/calibration.jsonl --held-out-traces /tmp/split/test.jsonl --max-average-cost 0.003 --output /tmp/held-out.json
@@ -145,6 +175,7 @@ jobs:
           .ci-wheel-check/bin/python -c "from facetroute.public_scores import PublicScoreLimits, run_public_scores; assert PublicScoreLimits().max_records == 1000; assert callable(run_public_scores)"
           .ci-wheel-check/bin/facetroute-public-score-live --help | grep -- --acknowledge-cost
           .ci-wheel-check/bin/facetroute-mmlu-prepare --help | grep -- --dev-sha256
+          .ci-wheel-check/bin/facetroute-gsm8k-prepare --help | grep -- --train-sha256
           .ci-wheel-check/bin/facetroute-contamination-audit --help | grep -- --training
           .ci-wheel-check/bin/facetroute-contamination-exclusions \
             --source examples/contamination-questions.jsonl \
