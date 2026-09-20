@@ -4,6 +4,21 @@ Notable changes are recorded here. Versions follow semantic versioning.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-19
+
+### Added
+
+- Opt-in native asynchronous OpenAI-compatible HTTP transport using HTTPX,
+  with a total deadline, bounded JSON/SSE payloads, explicit cancellation and
+  stream closure, strict endpoint and response checks, and conservative
+  pre-send-only retry classification.
+- Local-server and controller-to-provider regressions for streaming,
+  cancellation, timeouts, proxy/redirect isolation, malformed inputs, and
+  clean base versus `[async]` distribution installs.
+
+The default install remains HTTPX-free. External-provider CI and a streaming
+HTTP server remain open; this release does not claim full RouteLLM parity.
+
 ## [0.9.0] - 2026-09-19
 
 ### Added

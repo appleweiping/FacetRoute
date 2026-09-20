@@ -54,7 +54,27 @@ for honestly marking only proven pre-send failures as retry-safe. The async
 registry passes a copy of the request with the selected upstream `model` and
 the correct `stream` boolean, overriding conflicting caller fields without
 changing the caller's mapping. It validates completions/chunks and preserves the same no-partial-stream
-retry rule. This release does **not** include a bundled native async HTTP
-transport, streaming HTTP server, or end-to-end external-provider CI profile;
-those remain roadmap work. Fake-clock, concurrency, deadline, and local-server
-tests cover the shipped boundary without outbound credentials.
+retry rule. Fake-clock, concurrency, deadline, and local-server tests cover
+the shipped boundary without outbound credentials.
+
+### Optional native asynchronous HTTP transport
+
+Install `facetroute[async]`, then explicitly import
+`AsyncOpenAICompatibleProvider` from `facetroute.async_http` and pass it as the
+`client` above. The default package import and CLI do not require HTTPX; the
+synchronous provider and `serve` behavior are unchanged.
+
+The native client uses a fixed, validated OpenAI-compatible endpoint. Plain
+HTTP is accepted only for loopback development; HTTPS verifies certificates.
+Environment proxies and redirects are disabled. A separate client is owned
+and closed for each call, including cancellation or partial stream closure;
+call `await stream.aclose()` if you stop consuming an SSE stream early. Request
+JSON is capped at 16 MiB by default, response JSON at 16 MiB, raw SSE at
+64 MiB, and each SSE event at 1 MiB. Compressed or otherwise encoded responses
+are rejected. The specified timeout is a total wall-clock deadline, not just
+an idle-read timeout: elapsed time while the caller pauses an SSE stream also
+counts, but the caller is not cancelled during that pause. Only a direct
+connection failure or connect timeout is
+certified pre-send and retry-safe; write/read/pool timeouts, response errors,
+and interrupted streams are not. The streaming HTTP server and external
+provider CI profile remain roadmap work.

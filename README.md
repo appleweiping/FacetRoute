@@ -124,9 +124,9 @@ change preferences; neither can make an ineligible model selectable.
   chunked SSE; injectable providers; environment-only credentials; optional
   bearer authentication; redacted structured upstream failures; and opt-in
   pre-send-only retry/backoff with per-model circuit breaking. Python callers
-  can also inject a genuinely asynchronous provider client/controller. See
-  [provider resilience](docs/provider-resilience.md) for safety boundaries and
-  remaining async-transport work.
+  can also use the opt-in native asynchronous HTTP provider with the
+  asynchronous client/controller. See [provider resilience](docs/provider-resilience.md)
+  for safety boundaries and remaining async-server work.
 - **CLI**: `route`, `simulate`, `feedback`, `report`, `split-traces`, `calibrate`,
   `train-similarity`, `train-factorization`, `benchmark`, `benchmark-sweep`,
   `normalize-benchmark`, and `serve`.
@@ -136,6 +136,9 @@ change preferences; neither can make an ineligible model selectable.
 ```bash
 python -m pip install -e .
 ```
+
+For the optional native asynchronous HTTP provider, install `.[async]` and
+import `AsyncOpenAICompatibleProvider` from `facetroute.async_http`.
 
 Development tools are optional:
 
